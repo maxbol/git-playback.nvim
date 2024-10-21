@@ -20,8 +20,8 @@
 
 #define da_free(xs)                                                            \
   do {                                                                         \
-    free(xs.items);                                                            \
-    xs.items = NULL;                                                           \
-    xs.count = 0;                                                              \
-    xs.capacity = 0;                                                           \
+    free(xs->items);                                                           \
+    xs->items = NULL;                                                          \
+    xs->count = 0;                                                             \
+    xs->capacity = 0;                                                          \
   } while (0)
