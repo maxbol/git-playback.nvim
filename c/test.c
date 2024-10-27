@@ -1,56 +1,28 @@
-#include "motions.c"
+#include "patch.c"
 
 // Basic text editor heuristics
-int move_heuristic(gplayback_node node, gplayback_context context,
-                   void *closure) {
-  return 1;
-}
-
-int backspace_heuristic(gplayback_node node, gplayback_context context,
-                        void *closure) {
-  return 1;
-}
-
 typedef struct {
   char key;
 } bte_closure_typechar;
-int typechar_heuristic(gplayback_node node, gplayback_context context,
-                       void *closure) {
-  bte_closure_typechar *c = closure;
-  gplayback_text *lhs = &node.diff.lhs;
-  gplayback_text *rhs = &node.diff.rhs;
-
-  if (lhs->words_len == rhs->words_len) {
-    gplayback_word_list_entry *lhs_word = lhs->words.first;
-    gplayback_word_list_entry *rhs_word = rhs->words.first;
-    int i = 0;
-    do {
-      if (lhs_word->item.len != rhs_word->item.len) {
-        return 0;
-      }
-    } while ((++i) > lhs->words_len && (lhs_word = lhs_word->next) &&
-             (rhs_word = rhs_word->next));
-  }
-  return 1;
-}
-
 int main() {
   gplayback_slice lhs =
-      strslice("Hello, world!\nBar\nbie\nYoyo\nGogo\nThis is a test.\nFubu\n");
+      strslice("Hello, world!\nBar bie\nYoyo\nThis is a test.\n");
   gplayback_slice rhs =
-      strslice("Hello, world!\nThis is not a test.\nBar bie\nYoyo\n");
+      strslice("Hello, world!\nThis is a test.\nBar bie\nYoyo\n");
 
   gplayback_diff diff = generate_diff(lhs, rhs);
+
+  printf("Original diff:\n");
+  debug_diff(diff);
+
   gplayback_patch patch = generate_patch(diff);
+
+  printf("Diff after patch generation:\n");
+  debug_diff(diff);
 
   printf("Operations generated:\n");
   gplayback_vm_operation_entry *entry = patch.first;
   while (entry != NULL) {
-    printf(" + Operation type: %d\n", entry->item.type);
-    printf(" + Cursor: %zu:%zu -> %zu:%zu\n", entry->item.cursor.line,
-           entry->item.cursor.column, entry->item.cursor_after.line,
-           entry->item.cursor_after.column);
-
     switch (entry->item.type) {
     case GPLAYBACK_OP_INSERT_WORD_AFTER: {
       gplayback_vm_op_insert_word_after *data = entry->item.data;
@@ -80,7 +52,19 @@ int main() {
       printf(" >> Delete words [len=%zu]\n", data->char_len);
       break;
     }
+    case GPLAYBACK_OP_CONCAT_ROWS: {
+      printf(" >> Concat rows\n");
+      break;
     }
+    case GPLAYBACK_OP_SPLIT_ROWS: {
+      printf(" >> Split rows\n");
+      break;
+    }
+    }
+    printf(" + Cursor: %d:%d -> %d:%d\n", entry->item.cursor.line,
+           entry->item.cursor.column, entry->item.cursor_after.line,
+           entry->item.cursor_after.column);
+
     printf("\n");
 
     entry = entry->next;
@@ -102,6 +86,6 @@ int main() {
 /*
  * Hello, world!
  * This is not a test.
- * Bar bie
+ * Bar bie doll
  * Yoyo
  */
