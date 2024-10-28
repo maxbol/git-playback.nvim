@@ -154,6 +154,8 @@ append_ml_operation_entry(gplayback_vm_operation_entry *entry,
   }
 
   if (op_data->move_amount > 0) {
+    assert(nextline_anchor != NULL, "Moveset nextline anchor has no next word "
+                                    "entry, this should not happen");
     modify_words_linenum(nextline_anchor, ml->move_amount, -ml->lines_amount);
   } else {
     assert(ml->anchor->prev != NULL,
@@ -171,6 +173,25 @@ append_ml_operation_entry(gplayback_vm_operation_entry *entry,
 
   return append_operation_entry(entry, GPLAYBACK_OP_MOVE_ROWS, op_data, cursor,
                                 cursor);
+}
+
+int calc_move_amount(gplayback_word_list_entry *rhs_anchor,
+                     gplayback_word_list_entry *lhs_word_cursor) {
+  int target_line = 0;
+  gplayback_word_list_entry *rhs_anchor_rel = rhs_anchor->prev;
+
+  while (rhs_anchor_rel != NULL) {
+    if (rhs_anchor_rel->item.match != NULL) {
+      gplayback_word_list_entry *lhs_anchor_rel = rhs_anchor_rel->item.match;
+
+      target_line = lhs_anchor_rel->item.line_idx + rhs_anchor->item.line_idx -
+                    rhs_anchor_rel->item.line_idx - 1;
+      break;
+    }
+    rhs_anchor_rel = rhs_anchor_rel->prev;
+  }
+
+  return target_line - lhs_word_cursor->item.line_idx;
 }
 
 gplayback_patch generate_patch(gplayback_diff diff) {
@@ -206,8 +227,8 @@ gplayback_patch generate_patch(gplayback_diff diff) {
       /*line = &diff.lhs.lines.items[lhs_word_cursor->item.line_idx];*/
       cursor.line = lhs_word_cursor->item.line_idx;
       is_newline = true;
-      rhs_anchor = NULL;
       lhs_anchor = NULL;
+      rhs_anchor = NULL;
 
       line_is_dirty = is_dirty_line(lhs_word_cursor, cursor.line);
     }
@@ -330,7 +351,7 @@ gplayback_patch generate_patch(gplayback_diff diff) {
 
     // Add DELETE_WORD, CONCAT_ROWS and SPLIT_ROWS operations as needed
     // But first check if visited (necessary because the word might have have
-    // been move here from elsewhere)
+    // been moved here from elsewhere)
     if (!is_word_visited(lhs_visited, *lhs_word_cursor)) {
       if (lhs_word_cursor->item.match == NULL) {
         // Remove word
@@ -397,35 +418,24 @@ gplayback_patch generate_patch(gplayback_diff diff) {
       }
     }
 
-    // Mark the LHS word as visited
-    mark_word_visited(&lhs_visited, lhs_word_cursor);
-
     // End of line, see if line should be moved
-    if (lhs_word_cursor->next == NULL || lhs_word_cursor->next->item.line_idx !=
-                                             lhs_word_cursor->item.line_idx) {
+    if (!is_word_visited(lhs_visited, *lhs_word_cursor) &&
+        (lhs_word_cursor->next == NULL ||
+         lhs_word_cursor->next->item.line_idx !=
+             lhs_word_cursor->item.line_idx)) {
       if (lhs_anchor != NULL && rhs_anchor != NULL &&
           lhs_anchor->item.line_idx != rhs_anchor->item.line_idx) {
         int target_line = 0;
-        gplayback_word_list_entry *rhs_anchor_rel = rhs_anchor->prev;
 
-        while (rhs_anchor_rel != NULL) {
-          if (rhs_anchor_rel->item.match != NULL) {
-            gplayback_word_list_entry *lhs_anchor_rel =
-                rhs_anchor_rel->item.match;
+        int move_amount = calc_move_amount(rhs_anchor, lhs_word_cursor);
 
-            target_line = lhs_anchor_rel->item.line_idx +
-                          rhs_anchor->item.line_idx -
-                          rhs_anchor_rel->item.line_idx - 1;
-            break;
-          }
-          rhs_anchor_rel = rhs_anchor_rel->prev;
-        }
-
-        int move_amount = target_line - lhs_word_cursor->item.line_idx;
-
-        if (move_amount != -1) {
+        if (move_amount != ml.move_amount) {
           if (ml.lines_amount > 0) {
-            entry = append_ml_operation_entry(entry, lhs_word_cursor, &ml);
+            entry = append_ml_operation_entry(entry, lhs_anchor, &ml);
+
+            // We have to redo the calculation here, because the positions might
+            // have shifted around with the move
+            move_amount = calc_move_amount(rhs_anchor, lhs_word_cursor);
           }
           ml.anchor = lhs_anchor;
           ml.move_amount = move_amount;
@@ -433,15 +443,20 @@ gplayback_patch generate_patch(gplayback_diff diff) {
 
         ml.lines_amount++;
       } else if (ml.lines_amount > 0) {
-        entry = append_ml_operation_entry(entry, lhs_word_cursor, &ml);
+        entry = append_ml_operation_entry(entry, lhs_anchor, &ml);
       }
     }
+
+    // Mark the LHS word as visited
+    mark_word_visited(&lhs_visited, lhs_word_cursor);
 
     lhs_word_cursor = lhs_word_cursor->next;
   } while (lhs_word_cursor != NULL);
 
   if (ml.lines_amount > 0) {
-    entry = append_ml_operation_entry(entry, lhs_word_cursor, &ml);
+    // TODO(2024-10-28, Max Bolotin): This will always break the assertion in
+    // append_ml_operation_entry, what is expected behaviour here?
+    entry = append_ml_operation_entry(entry, NULL, &ml);
   }
 
   if (dl.lines_amount > 0) {
