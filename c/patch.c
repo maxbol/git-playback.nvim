@@ -397,7 +397,8 @@ gplayback_patch generate_patch(gplayback_diff diff) {
               lhs_word_cursor->item.ptr[lhs_word_cursor->item.len - 1];
           char rhs_lastchar = match_word->item.ptr[match_word->item.len - 1];
 
-          if (lhs_lastchar == '\n' && rhs_lastchar != '\n') {
+          if (lhs_lastchar == GPLAYBACK_TOKEN_NEWLINE &&
+              rhs_lastchar != GPLAYBACK_TOKEN_NEWLINE) {
             // Concat lines
             entry = append_operation_entry(entry, GPLAYBACK_OP_CONCAT_ROWS,
                                            NULL, cursor, cursor);
@@ -405,7 +406,8 @@ gplayback_patch generate_patch(gplayback_diff diff) {
             modify_words_colnum_until_eol(lhs_next,
                                           lhs_word_cursor->item.col_idx +
                                               lhs_word_cursor->item.len);
-          } else if (lhs_lastchar != '\n' && rhs_lastchar == '\n') {
+          } else if (lhs_lastchar != GPLAYBACK_TOKEN_NEWLINE &&
+                     rhs_lastchar == GPLAYBACK_TOKEN_NEWLINE) {
             // Split lines
             entry = append_operation_entry(entry, GPLAYBACK_OP_SPLIT_ROWS, NULL,
                                            cursor, cursor);
@@ -434,8 +436,8 @@ gplayback_patch generate_patch(gplayback_diff diff) {
             entry = append_ml_operation_entry(entry, lhs_anchor, &ml);
 
             // We have to redo the calculation here, because the positions might
-            // have shifted around with the move
             move_amount = calc_move_amount(rhs_anchor, lhs_word_cursor);
+            // have shifted around with the move
           }
           ml.anchor = lhs_anchor;
           ml.move_amount = move_amount;

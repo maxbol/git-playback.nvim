@@ -3,6 +3,7 @@
 
 #include "arrays.h"
 #include "assert.c"
+#include "constants.h"
 #include "log.h"
 #include "segments.c"
 
@@ -182,7 +183,9 @@ bool is_word_visited(gplayback_flags visited, gplayback_word_list_entry word) {
   return visited.items[word.item.word_id];
 }
 
-bool is_whitespace(char c) { return c == ' ' || c == '\t'; }
+bool is_whitespace(char c) {
+  return c == GPLAYBACK_TOKEN_SPACE || c == GPLAYBACK_TOKEN_TAB;
+}
 
 void mark_word_visited(gplayback_flags *visited,
                        gplayback_word_list_entry *word) {
@@ -320,8 +323,9 @@ void modify_words_linenum_until_eol(gplayback_word_list_entry *word,
 }
 
 char word_matchchr(char chr) {
-  if (chr == ' ' || chr == '\t' || chr == '\n') {
-    return ' ';
+  if (chr == GPLAYBACK_TOKEN_SPACE || chr == GPLAYBACK_TOKEN_TAB ||
+      chr == GPLAYBACK_TOKEN_NEWLINE) {
+    return GPLAYBACK_TOKEN_SPACE;
   }
   return chr;
 }
@@ -334,10 +338,11 @@ gplayback_word_list word_list(gplayback_slice text) {
   int word_id = 0;
   char *cursor = NULL;
 
-  char lastchar = '\xff';
+  char lastchar = GPLAYBACK_TOKEN_NEVER;
+
   for (size_t i = 0; i < text.len; i++) {
     if (i > 0 && ((!is_whitespace(text.ptr[i]) && is_whitespace(lastchar)) ||
-                  lastchar == '\n')) {
+                  lastchar == GPLAYBACK_TOKEN_NEWLINE)) {
 
       // Commit existing word and begin new one
       if (cursor != NULL) {
@@ -350,7 +355,7 @@ gplayback_word_list word_list(gplayback_slice text) {
       cursor = text.ptr + i;
     }
 
-    if (lastchar == '\n') {
+    if (lastchar == GPLAYBACK_TOKEN_NEWLINE) {
       line_idx++;
       col_idx = 1;
     } else {

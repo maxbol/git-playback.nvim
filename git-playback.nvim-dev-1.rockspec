@@ -1,17 +1,16 @@
 package = "git-playback.nvim"
 version = "dev-1"
 source = {
-	url = "*** please add URL for source tarball, zip or repository here ***",
+	url = "https://github.com/maxbol/git-playback.nvim",
 }
 description = {
-	homepage = "*** please enter a project homepage ***",
-	license = "*** please specify a license ***",
+	homepage = "https://github.com/maxbol/git-playback.nvim",
+	license = "MIT",
 }
 build = {
 	type = "builtin",
 	modules = {
-		-- ["git-playback.git"] = "lua/git-playback/git.lua",
-		-- types = "lua/types.lua"
-		["patch"] = "c/patch.c",
+		["git-playback"] = "lua/git-playback/init.lua",
+		["playback_c"] = "c/playback.c",
 	},
 }
