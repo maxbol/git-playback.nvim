@@ -1,7 +1,4 @@
 Hello, world!
-Bar
-bie
+This is not a test.
+Bar bie doll
 Yoyo
-Gogo
-This is a test.
-Fubu
