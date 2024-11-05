@@ -3,7 +3,7 @@
 #include <string.h>
 
 typedef struct {
-  char *ptr;
+  const char *ptr;
   size_t len;
 } gplayback_slice;
 
@@ -30,7 +30,7 @@ gplayback_segment subsegment(gplayback_segment segment, int start, int len) {
   return subsegment;
 }
 
-char *segmentptr(gplayback_segment segment) {
+const char *segmentptr(gplayback_segment segment) {
   if (segment.start > segment.slice->len) {
     fprintf(stderr, "Panic: Segment start is out of bounds\n");
     exit(1);
@@ -38,12 +38,12 @@ char *segmentptr(gplayback_segment segment) {
   return segment.slice->ptr + segment.start;
 }
 
-gplayback_slice strslice(char *ptr) {
+gplayback_slice strslice(const char *ptr) {
   gplayback_slice slice = {ptr, strlen(ptr)};
   return slice;
 }
 
-gplayback_slice subslice(char *ptr, int offset, int len) {
+gplayback_slice subslice(const char *ptr, int offset, int len) {
   gplayback_slice slice = {ptr + offset, len};
   return slice;
 }

@@ -9,7 +9,7 @@
     };
   };
 
-  output = {
+  outputs = {
     nixpkgs,
     flake-utils,
     ...
@@ -19,8 +19,12 @@
         pkgs = nixpkgs.legacyPackages.${system};
       in {
         devShells.default = pkgs.mkShell {
+          shellHook = ''
+            export LUA_CPATH=./?.so
+          '';
           buildInputs = with pkgs; [
             lua5_1
+            luarocks
           ];
         };
       }

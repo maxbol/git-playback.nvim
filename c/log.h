@@ -1,4 +1,4 @@
-#define ENABLE_DEBUG_LOGGING true
+#define ENABLE_DEBUG_LOGGING false
 
 #define dbg_log(...)                                                           \
   if (ENABLE_DEBUG_LOGGING) {                                                  \

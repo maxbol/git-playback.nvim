@@ -127,8 +127,8 @@ bool lines_identical(gplayback_line *a, gplayback_line *b) {
   if (a->words == NULL || b->words == NULL) {
     exit(1);
   }
-  char *a_ptr = a->words->item.ptr;
-  char *b_ptr = b->words->item.ptr;
+  const char *a_ptr = a->words->item.ptr;
+  const char *b_ptr = b->words->item.ptr;
   for (int i = 0; i < a->char_len; i++) {
     if (a_ptr[i] != b_ptr[i]) {
       return false;

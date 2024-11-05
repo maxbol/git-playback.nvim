@@ -1,5 +1,6 @@
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "arrays.h"
 #include "assert.c"
@@ -8,7 +9,7 @@
 #include "segments.c"
 
 typedef struct gplayback_word {
-  char *ptr;
+  const char *ptr;
   struct gplayback_word_list_entry *match;
   int line_idx;
   int col_idx;
@@ -21,6 +22,12 @@ typedef struct gplayback_word_list_entry {
   struct gplayback_word_list_entry *next;
   struct gplayback_word_list_entry *prev;
 } gplayback_word_list_entry;
+
+typedef struct {
+  gplayback_word_list_entry **items;
+  size_t count;
+  size_t capacity;
+} gplayback_word_list_entry_refs;
 
 typedef struct {
   gplayback_word_list_entry *first;
@@ -83,13 +90,16 @@ delete_words_until_eol(gplayback_word_list_entry *word) {
             "this has no effect\n");
     return word;
   }
+
   int line_idx = word->item.line_idx;
-  while (word->next != NULL) {
+
+  do {
     word = delete_word(word);
-    if (word->item.line_idx != line_idx) {
+    if (word != NULL && word->item.line_idx != line_idx) {
       break;
     }
-  }
+  } while (word != NULL);
+
   return word;
 }
 
@@ -188,19 +198,16 @@ bool is_whitespace(char c) {
 }
 
 void mark_word_visited(gplayback_flags *visited,
-                       gplayback_word_list_entry *word) {
-  da_replace(visited, word->item.word_id, true);
+                       gplayback_word_list_entry *word, bool visited_state) {
+  da_replace(visited, word->item.word_id, visited_state);
 }
 
 void mark_words_visited_until_eol(gplayback_flags *visited,
-                                  gplayback_word_list_entry *word) {
-  if (word == NULL) {
-    dbg_log("Warning: Trying to mark words until EOL from NULL word, "
-            "this has no effect\n");
-    return;
-  }
+                                  gplayback_word_list_entry *word,
+                                  bool visited_state) {
+  assert(word != NULL, "Can not mark words until EOL from NULL word");
   do {
-    mark_word_visited(visited, word);
+    mark_word_visited(visited, word, visited_state);
   } while ((word = word->next) != NULL &&
            word->item.line_idx == word->prev->item.line_idx);
 }
@@ -212,9 +219,23 @@ void move_words_until_eol(gplayback_word_list_entry *src,
 
   int line_idx = src->item.line_idx;
 
+  gplayback_word_list_entry_refs refs = {0};
+
   do {
-    gplayback_word_list_entry *next = src->next;
-    gplayback_word_list_entry *prev = src->prev;
+    da_append(refs, src);
+  } while ((src = src->next) && src->item.line_idx == line_idx);
+
+  for (int i = 0; i < refs.count; i++) {
+    gplayback_word_list_entry *entry;
+
+    if (append_mode) {
+      entry = refs.items[i];
+    } else {
+      entry = refs.items[refs.count - i - 1];
+    }
+
+    gplayback_word_list_entry *next = entry->next;
+    gplayback_word_list_entry *prev = entry->prev;
 
     // Glue next and prev together at current position
     if (next != NULL) {
@@ -226,36 +247,91 @@ void move_words_until_eol(gplayback_word_list_entry *src,
 
     if (append_mode) {
       // Append case
-      src->prev = dest;
-      src->next = dest->next;
+      entry->prev = dest;
+      entry->next = dest->next;
+      if (dest->next != NULL) {
+        dest->next->prev = entry;
+      }
+      dest->next = entry;
+      dest = entry;
     } else {
       // Insert case
-      src->prev = dest->prev;
-      src->next = dest;
+      entry->prev = dest->prev;
+      if (dest->prev != NULL) {
+        dest->prev->next = entry;
+      }
+      entry->next = dest;
+      dest->prev = entry;
+      dest = entry;
     }
+  }
 
-  } while ((src = src->next) && src->item.line_idx == line_idx);
+  free(refs.items);
+}
+
+void approach_by_one(int *number, int target) {
+  if (*number > target) {
+    *number -= 1;
+  } else if (target > *number) {
+    *number += 1;
+  }
+}
+
+bool has_next_it(int number, int target, int mod) {
+  if (target >= 0) {
+    return number < (target + mod);
+  }
+  return number > (target - mod);
+}
+
+gplayback_word_list_entry *iterate_word(gplayback_word_list_entry *word,
+                                        int direction) {
+  if (direction >= 0) {
+    return word->next;
+  }
+  return word->prev;
 }
 
 void move_words_absolute_until_eol(gplayback_word_list_entry *src,
                                    int move_amount) {
-  if (src == NULL) {
-    dbg_log("Warning: Trying to move words until EOL from NULL word, "
-            "this has no effect\n");
-    return;
+  assert(src != NULL, "Moving words from NULL word not allowed");
+
+  bool append_mode = true;
+  gplayback_word_list_entry *dest = src;
+
+  int direction;
+  if (move_amount > 0) {
+    direction = 1;
+    append_mode = true;
+    move_amount += 1;
+  } else {
+    direction = -1;
+    append_mode = false;
+    move_amount -= 1;
   }
 
-  gplayback_word_list_entry *dest = src;
-  for (int i = 0; i < move_amount; i++) {
-    while (dest->next != NULL &&
-           dest->next->item.line_idx == dest->item.line_idx) {
-      dest = dest->next;
+  for (int i = 0; has_next_it(i, move_amount, 0);
+       approach_by_one(&i, move_amount)) {
+    int line_idx = dest->item.line_idx;
+
+    do {
+      gplayback_word_list_entry *following = iterate_word(dest, direction);
+      if (following == NULL) {
+        goto outer;
+      } else if (following->item.line_idx != line_idx) {
+        break;
+      }
+      dest = following;
+    } while (1);
+
+    if (has_next_it(i, move_amount, -1)) {
+      dest = iterate_word(dest, direction);
+      assert(dest != NULL, "Attempted to move past boundaries of word list");
     }
   }
+outer:
 
-  assert(dest != NULL, "No more lines available to move");
-
-  return move_words_until_eol(src, dest, true);
+  return move_words_until_eol(src, dest, append_mode);
 }
 
 void modify_words_colnum_until_eol(gplayback_word_list_entry *word,
@@ -272,21 +348,30 @@ void modify_words_colnum_until_eol(gplayback_word_list_entry *word,
            (word = word->next));
 }
 
-void modify_words_linenum(gplayback_word_list_entry *start, int limit,
+void modify_words_linenum(gplayback_word_list_entry *entry, int limit,
                           int modify_amount) {
-  assert(start != NULL, "Can not modify line number of NULL word");
-  int line_idx = start->item.line_idx;
+  assert(entry != NULL, "Can not modify line number of NULL word");
+  int line_idx = entry->item.line_idx;
+
+  /*
+   * Bar
+   * bie
+   * doll
+   * xxx
+   * yyy
+   * zzz
+   */
 
   do {
-    if (limit != -1 && start->item.line_idx != line_idx) {
+    if (limit != -1 && entry->item.line_idx != line_idx) {
       if (--limit <= 0) {
         break;
       }
-      line_idx = start->item.line_idx;
+      line_idx = entry->item.line_idx;
     }
 
-    start->item.line_idx += modify_amount;
-  } while ((start = start->next));
+    entry->item.line_idx += modify_amount;
+  } while ((entry = entry->next));
 }
 
 void modify_words_linenum_backwards(gplayback_word_list_entry *start, int limit,
@@ -336,7 +421,7 @@ gplayback_word_list word_list(gplayback_slice text) {
   int line_idx = 0;
   int col_idx = 0;
   int word_id = 0;
-  char *cursor = NULL;
+  const char *cursor = NULL;
 
   char lastchar = GPLAYBACK_TOKEN_NEVER;
 
