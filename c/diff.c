@@ -124,9 +124,7 @@ bool lines_identical(gplayback_line *a, gplayback_line *b) {
       a->word_len != b->word_len) {
     return false;
   }
-  if (a->words == NULL || b->words == NULL) {
-    exit(1);
-  }
+  assert(a->words != NULL && b->words != NULL, "Line words are NULL");
   const char *a_ptr = a->words->item.ptr;
   const char *b_ptr = b->words->item.ptr;
   for (int i = 0; i < a->char_len; i++) {

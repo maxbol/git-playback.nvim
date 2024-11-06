@@ -66,7 +66,7 @@ local operations = {
       end
     end
 
-    table.insert(keys, "<CR>")
+    table.insert(keys, "<ESC>")
 
     local cursor = {
       line = current_pos.line + 1,
@@ -84,10 +84,15 @@ local operations = {
       end
     end
     if move_amount > 0 then
-      table.insert(keys, string.rep("J", move_amount))
+      for _ = 1, move_amount do
+        table.insert(keys, "J")
+      end
     else
-      table.insert(keys, string.rep("K", -move_amount))
+      for _ = 1, move_amount do
+        table.insert(keys, "K")
+      end
     end
+    table.insert(keys, "o")
     table.insert(keys, "<ESC>")
 
     local cursor = {
@@ -137,9 +142,9 @@ local operations = {
 local M = {}
 
 M.getKeysFromPatch = function(patch)
-  local success, keys = pcall(playback.getPatchKeys, { operations = operations }, patch)
+  local ok, keys = pcall(playback.getPatchKeys, { operations = operations }, patch)
 
-  if not success then
+  if not ok then
     error("Patch application: " .. keys)
     return ERR_C_ERROR
   end
@@ -149,7 +154,7 @@ end
 
 M.processPatch = function(lhs, patch)
   local keys = M.getKeysFromPatch(patch)
-  if keys == ERR_C_ERROR then return end
+  if keys == ERR_C_ERROR then return keys end
 
   vim.cmd("tabnew")
   vim.cmd("setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap")
@@ -160,25 +165,24 @@ M.processPatch = function(lhs, patch)
   end
   vim.api.nvim_buf_set_lines(0, 0, -1, false, lhs_lines)
 
+  local speed = vim.g.playback_speed or 200
+
   local i = 1
   PrintNextKey = vim.schedule_wrap(function()
     local key = keys[i]
     if not key then return end
-    print("Key:" .. key)
-    key = vim.api.nvim_replace_termcodes(key, true, false, true)
-    print("Key (replace termcode): " .. key)
-    vim.api.nvim_feedkeys(key, "n", false)
+    vim.api.nvim_input(key)
     i = i + 1
     local t = vim.uv.new_timer()
-    t:start(200, 0, PrintNextKey)
+    t:start(speed, 0, PrintNextKey)
   end)
 
   local t = vim.uv.new_timer()
-  t:start(200, 0, PrintNextKey)
+  t:start(speed, 0, PrintNextKey)
   -- vim.defer_fn(PrintNextKey, 10)
 end
 
-local function processGitCmd(cmd)
+local function sysExec(cmd)
   local f = assert(io.popen(cmd, "r"))
   local s = assert(f:read("*a"))
   f:close()
@@ -186,16 +190,34 @@ local function processGitCmd(cmd)
 end
 
 M.playbackFromCommit = function(lhs_commit, rhs_commit, file)
-  print("LHS commit: " .. lhs_commit)
-  print("RHS commit: " .. rhs_commit)
-  print("File: " .. file)
-  print(("git show " .. lhs_commit .. ":" .. file))
-  print(("git show " .. rhs_commit .. ":" .. file))
-  local lhs = processGitCmd("git show " .. lhs_commit .. ":" .. file)
-  local rhs = processGitCmd("git show " .. rhs_commit .. ":" .. file)
+  local lhs, rhs
 
-  local diff = playback.generateDiff(lhs, rhs)
-  local patch = playback.generatePatch(diff)
+  if not lhs_commit then
+    lhs = sysExec("cat " .. file)
+  else
+    lhs = sysExec("git show " .. lhs_commit .. ":" .. file)
+  end
+
+  if not rhs_commit then
+    rhs = sysExec("cat " .. file)
+  else
+    rhs = sysExec("git show " .. rhs_commit .. ":" .. file)
+  end
+
+  local ok, diff, patch
+
+  ok, diff = pcall(playback.generateDiff, lhs, rhs)
+  if not ok then
+    error("Diff generation: " .. diff)
+    return ERR_C_ERROR
+  end
+
+  ok, patch = pcall(playback.generatePatch, diff)
+  if not ok then
+    error("Patch generation: " .. patch)
+    return ERR_C_ERROR
+  end
+
   M.processPatch(lhs, patch)
 end
 

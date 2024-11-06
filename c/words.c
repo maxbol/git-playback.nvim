@@ -3,7 +3,6 @@
 #include <stdlib.h>
 
 #include "arrays.h"
-#include "assert.c"
 #include "constants.h"
 #include "log.h"
 #include "segments.c"

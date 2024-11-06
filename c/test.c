@@ -1,10 +1,7 @@
 #include "patch.c"
 
-// Basic text editor heuristics
-typedef struct {
-  char key;
-} bte_closure_typechar;
 int main() {
+  // fooo
   gplayback_slice lhs =
       strslice("Hello, world!\nBar\nbie\nYoyo\nGogo\nThis is a test.\nFubu\n");
   gplayback_slice rhs =

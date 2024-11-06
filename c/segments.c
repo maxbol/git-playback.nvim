@@ -2,6 +2,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "assert.c"
+
 typedef struct {
   const char *ptr;
   size_t len;
@@ -31,10 +33,8 @@ gplayback_segment subsegment(gplayback_segment segment, int start, int len) {
 }
 
 const char *segmentptr(gplayback_segment segment) {
-  if (segment.start > segment.slice->len) {
-    fprintf(stderr, "Panic: Segment start is out of bounds\n");
-    exit(1);
-  }
+  assert(segment.start + segment.len <= segment.slice->len,
+         "Segment end is out of bounds");
   return segment.slice->ptr + segment.start;
 }
 

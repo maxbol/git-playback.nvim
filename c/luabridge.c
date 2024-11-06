@@ -83,37 +83,47 @@ void unpack_result(lua_State *L, gplayback_cursorpos *cursor,
 }
 
 int l_generate_diff(lua_State *L) {
+  set_err_lua_state(L);
   const char *lhs_str = luaL_checkstring(L, 1);
   const char *rhs_str = luaL_checkstring(L, 2);
   gplayback_slice lhs = strslice(lhs_str);
   gplayback_slice rhs = strslice(rhs_str);
   gplayback_diff *diff = lua_newuserdata(L, sizeof(gplayback_diff));
   *diff = generate_diff(lhs, rhs);
+  clear_err_lua_state();
   return 1;
 }
 
 int l_generate_patch(lua_State *L) {
+  set_err_lua_state(L);
   gplayback_diff *diff = lua_touserdata(L, 1);
   gplayback_patch *patch = lua_newuserdata(L, sizeof(gplayback_patch));
   *patch = generate_patch(*diff);
+  clear_err_lua_state();
   return 1;
 }
 
 int l_debugprint_diff(lua_State *L) {
+  set_err_lua_state(L);
   gplayback_diff *diff = lua_touserdata(L, 1);
   debug_diff(*diff);
+  clear_err_lua_state();
   return 0;
 }
 
 int l_debugprint_patch(lua_State *L) {
+  set_err_lua_state(L);
   gplayback_patch *patch = lua_touserdata(L, 1);
   debug_patch(*patch);
+  clear_err_lua_state();
   return 0;
 }
 
 int l_get_patch_keys(lua_State *L) {
+  set_err_lua_state(L);
   if (!lua_istable(L, 1)) {
     luaL_error(L, "Expected table as first argument");
+    clear_err_lua_state();
     return 0;
   }
 
@@ -125,6 +135,7 @@ int l_get_patch_keys(lua_State *L) {
 
   if (!lua_istable(L, oidx)) {
     luaL_error(L, "Expected table as operations field");
+    clear_err_lua_state();
     return 0;
   }
 
@@ -246,13 +257,8 @@ int l_get_patch_keys(lua_State *L) {
 
   free(keys.items);
 
+  clear_err_lua_state();
   return 1;
-}
-
-static int l_sleep(lua_State *L) {
-  int m = luaL_checknumber(L, 1);
-  usleep(m * 1000);
-  return 0;
 }
 
 static const struct luaL_Reg playback[] = {
@@ -261,7 +267,6 @@ static const struct luaL_Reg playback[] = {
     {"debugprintDiff", l_debugprint_diff},
     {"debugprintPatch", l_debugprint_patch},
     {"getPatchKeys", l_get_patch_keys},
-    {"sleep", l_sleep},
     {NULL, NULL} // sentinel
 };
 
