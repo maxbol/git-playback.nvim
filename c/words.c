@@ -3,9 +3,10 @@
 #include <stdlib.h>
 
 #include "arrays.h"
+#include "assert.h"
 #include "constants.h"
 #include "log.h"
-#include "segments.c"
+#include "segments.h"
 
 typedef struct gplayback_word {
   const char *ptr;
@@ -37,6 +38,8 @@ typedef struct {
   size_t count;
   size_t capacity;
 } gplayback_flags;
+
+// test
 
 #define append_wordlist_word(v_ptr, v_len, v_line_idx, v_col_idx, v_word_id,   \
                              v_last_entry, v_word_list)                        \
@@ -111,7 +114,7 @@ find_first_word_in_wordlist(gplayback_word_list_entry *word) {
   return word;
 }
 
-void free_diff_word_list(gplayback_word_list list) {
+void free_word_list(gplayback_word_list list) {
   gplayback_word_list_entry *entry = list.first;
   while (entry != NULL) {
     gplayback_word_list_entry *next = entry->next;
@@ -176,10 +179,11 @@ insert_words_copy_until_eol(gplayback_word_list_entry *src,
     dest = dest->next;
   } while ((src = src->next) && src->item.line_idx == line_idx);
 
-  return src;
+  return dest;
 }
 
-bool is_dirty_line(gplayback_word_list_entry *start, int line_idx) {
+bool is_dirty_line(gplayback_word_list_entry *start) {
+  int line_idx = start->item.line_idx;
   do {
     if (start->item.match != NULL) {
       return true;
@@ -425,8 +429,8 @@ gplayback_word_list word_list(gplayback_slice text) {
   char lastchar = GPLAYBACK_TOKEN_NEVER;
 
   for (size_t i = 0; i < text.len; i++) {
-    if (i > 0 && ((!is_whitespace(text.ptr[i]) && is_whitespace(lastchar)) ||
-                  lastchar == GPLAYBACK_TOKEN_NEWLINE)) {
+    if (i == 0 || ((!is_whitespace(text.ptr[i]) && is_whitespace(lastchar)) ||
+                   lastchar == GPLAYBACK_TOKEN_NEWLINE)) {
 
       // Commit existing word and begin new one
       if (cursor != NULL) {
@@ -434,8 +438,6 @@ gplayback_word_list word_list(gplayback_slice text) {
                              word_id++, last_entry, word_list);
       }
 
-      cursor = text.ptr + i;
-    } else if (i == 0) {
       cursor = text.ptr + i;
     }
 

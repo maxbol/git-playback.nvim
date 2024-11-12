@@ -1,7 +1,9 @@
 {
   inputs = {
     nixpkgs = {
-      url = "github:NixOS/nixpkgs";
+      # Use staging-next so clangd works as expected
+      # https://github.com/NixOS/nixpkgs/issues/354768
+      url = "github:NixOS/nixpkgs/staging-next";
     };
 
     flake-utils = {
@@ -25,6 +27,14 @@
           buildInputs = with pkgs; [
             lua5_1
             luarocks
+            libgit2
+          ];
+          nativeBuildInputs = with pkgs; [
+            pkg-config
+            gnumake
+          ];
+          packages = with pkgs; [
+            clang-tools
           ];
         };
       }

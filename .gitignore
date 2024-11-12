@@ -6,3 +6,4 @@
 **/*.so
 **/*.o
 .direnv/
+/c_test

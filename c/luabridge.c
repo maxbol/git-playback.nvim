@@ -1,30 +1,15 @@
+#include <git2.h>
 #include <lauxlib.h>
 #include <lua.h>
 #include <lualib.h>
 #include <unistd.h>
 
-#include "patch.c"
-
-typedef struct {
-  const char **items;
-  size_t count;
-  size_t capacity;
-} gplayback_keys;
-
-#define check_usr_op(L, f, oidx)                                               \
-  lua_pushstring(L, f);                                                        \
-  lua_gettable(L, oidx);                                                       \
-  if (!lua_isfunction(L, -1)) {                                                \
-    luaL_error(L, "Expected function as " f " field");                         \
-    return 0;                                                                  \
-  }
-
-#define call_usr_op(L, n)                                                      \
-  if (lua_pcall(L, n, 1, 0) != 0) {                                            \
-    printf("%s, skipping to next operation\n", lua_tostring(L, -1));           \
-    entry = entry->next;                                                       \
-    continue;                                                                  \
-  }
+#include "arrays.h"
+#include "assert.h"
+#include "constants.h"
+#include "luabridge.h"
+#include "patch.h"
+#include "show.h"
 
 void push_cursor(lua_State *L, gplayback_cursorpos cursor) {
   lua_newtable(L);
@@ -106,17 +91,21 @@ int l_generate_patch(lua_State *L) {
 int l_debugprint_diff(lua_State *L) {
   set_err_lua_state(L);
   gplayback_diff *diff = lua_touserdata(L, 1);
-  debug_diff(*diff);
+  char out[DEBUG_STR_BUF_LEN];
+  debug_diff(*diff, out, DEBUG_STR_BUF_LEN);
+  lua_pushstring(L, out);
   clear_err_lua_state();
-  return 0;
+  return 1;
 }
 
 int l_debugprint_patch(lua_State *L) {
   set_err_lua_state(L);
   gplayback_patch *patch = lua_touserdata(L, 1);
-  debug_patch(*patch);
+  char out[DEBUG_STR_BUF_LEN];
+  debug_patch(*patch, out, DEBUG_STR_BUF_LEN);
+  lua_pushstring(L, out);
   clear_err_lua_state();
-  return 0;
+  return 1;
 }
 
 int l_get_patch_keys(lua_State *L) {
@@ -185,8 +174,10 @@ int l_get_patch_keys(lua_State *L) {
       lua_getref(L, ref_insert_word_after);
       push_cursor(L, cursor);
       push_cursor(L, entry->item.cursor);
-      lua_pushstring(L, slice_to_buf(data->src));
+      char *src = slice_to_buf(data->src);
+      lua_pushstring(L, src);
       call_usr_op(L, 3);
+      free(src);
       break;
     }
     case GPLAYBACK_OP_INSERT_ROW_AFTER: {
@@ -194,8 +185,10 @@ int l_get_patch_keys(lua_State *L) {
       lua_getref(L, ref_insert_row_after);
       push_cursor(L, cursor);
       push_cursor(L, entry->item.cursor);
-      lua_pushstring(L, slice_to_buf(data->src));
+      char *src = slice_to_buf(data->src);
+      lua_pushstring(L, src);
       call_usr_op(L, 3);
+      free(src);
       break;
     }
     case GPLAYBACK_OP_MOVE_ROWS: {
@@ -261,16 +254,40 @@ int l_get_patch_keys(lua_State *L) {
   return 1;
 }
 
+int l_show_file_at_rev(lua_State *L) {
+  set_err_lua_state(L);
+  const char *file_path = luaL_checkstring(L, 1);
+  const char *rev = luaL_checkstring(L, 2);
+  gplayback_slice txt = show_file_at_rev(file_path, rev);
+  lua_pushlstring(L, txt.ptr, txt.len);
+  clear_err_lua_state();
+  return 1;
+}
+
+int l_show_file_at_path(lua_State *L) {
+  set_err_lua_state(L);
+  const char *file_path = luaL_checkstring(L, 1);
+  gplayback_slice txt = show_file_at_path(file_path);
+  lua_pushlstring(L, txt.ptr, txt.len);
+  clear_err_lua_state();
+  return 1;
+}
+
 static const struct luaL_Reg playback[] = {
     {"generateDiff", l_generate_diff},
     {"generatePatch", l_generate_patch},
     {"debugprintDiff", l_debugprint_diff},
     {"debugprintPatch", l_debugprint_patch},
     {"getPatchKeys", l_get_patch_keys},
+    {"showFileAtRev", l_show_file_at_rev},
+    {"showFileAtPath", l_show_file_at_path},
     {NULL, NULL} // sentinel
 };
 
 int luaopen_playback(lua_State *L) {
+  // Initialize libgit2
+  git_libgit2_init();
+
   luaL_register(L, "playback", playback);
   return 1;
 }

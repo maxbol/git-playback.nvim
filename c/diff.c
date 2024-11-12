@@ -2,73 +2,66 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "words.c"
+#include "arrays.h"
+#include "assert.h"
+#include "constants.h"
+#include "diff.h"
+#include "words.h"
 
-typedef struct gplayback_line {
-  bool dirty;
-  size_t word_len;
-  size_t char_len;
-  size_t line_num;
-  gplayback_word_list_entry *words;
-  struct gplayback_line *match;
-} gplayback_line;
-
-typedef struct {
-  gplayback_line *items;
-  size_t count;
-  size_t capacity;
-} gplayback_lines;
-
-typedef struct {
-  gplayback_word_list words;
-  gplayback_lines lines;
-} gplayback_text;
-
-typedef struct {
-  gplayback_text lhs;
-  gplayback_text rhs;
-} gplayback_diff;
-
-void debug_diff(gplayback_diff diff) {
+int debug_diff(gplayback_diff diff, char out[], size_t out_len) {
   gplayback_word_list lhs_word_list = diff.lhs.words;
   gplayback_word_list rhs_word_list = diff.rhs.words;
-  gplayback_lines lhs_lines = diff.lhs.lines;
-  gplayback_lines rhs_lines = diff.rhs.lines;
+
+  int offset = 0;
 
   gplayback_word_list_entry *w_e = lhs_word_list.first;
-  do {
-    gplayback_word word = w_e->item;
-    printf("lhs_word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-           word.line_idx, word.col_idx, word.len, word.word_id, word.len,
-           word.ptr);
-    if (word.match != NULL) {
-      printf("   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-             word.match->item.line_idx, word.match->item.col_idx,
-             word.match->item.len, word.match->item.word_id,
-             word.match->item.len, word.match->item.ptr);
-    }
-  } while ((w_e = w_e->next));
+  if (w_e != NULL) {
+    do {
+      gplayback_word word = w_e->item;
+      offset +=
+          snprintf(out + offset, out_len - offset,
+                   "lhs_word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+                   word.line_idx, word.col_idx, word.len, word.word_id,
+                   word.len, word.ptr);
+      if (word.match != NULL) {
+        offset += snprintf(
+            out + offset, out_len - offset,
+            "   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+            word.match->item.line_idx, word.match->item.col_idx,
+            word.match->item.len, word.match->item.word_id,
+            word.match->item.len, word.match->item.ptr);
+      }
+    } while ((w_e = w_e->next));
+  }
 
   w_e = rhs_word_list.first;
-  do {
-    gplayback_word word = w_e->item;
-    printf("rhs_word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-           word.line_idx, word.col_idx, word.len, word.word_id, word.len,
-           word.ptr);
-    if (word.match != NULL) {
-      printf("   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-             word.match->item.line_idx, word.match->item.col_idx,
-             word.match->item.len, word.match->item.word_id,
-             word.match->item.len, word.match->item.ptr);
-    }
-  } while ((w_e = w_e->next));
+  if (w_e != NULL) {
+    do {
+      gplayback_word word = w_e->item;
+      offset +=
+          snprintf(out + offset, out_len - offset,
+                   "rhs_word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+                   word.line_idx, word.col_idx, word.len, word.word_id,
+                   word.len, word.ptr);
+      if (word.match != NULL) {
+        offset += snprintf(
+            out + offset, out_len - offset,
+            "   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+            word.match->item.line_idx, word.match->item.col_idx,
+            word.match->item.len, word.match->item.word_id,
+            word.match->item.len, word.match->item.ptr);
+      }
+    } while ((w_e = w_e->next));
+  }
+
+  return offset;
 }
 
 void free_diff_lines(gplayback_lines *lines) { da_free(lines); }
 
 void free_diff(gplayback_diff *diff) {
-  free_diff_word_list(diff->lhs.words);
-  free_diff_word_list(diff->rhs.words);
+  free_word_list(diff->lhs.words);
+  free_word_list(diff->rhs.words);
   free_diff_lines(&diff->lhs.lines);
   free_diff_lines(&diff->rhs.lines);
 }
@@ -191,8 +184,22 @@ void match_lines(gplayback_text *outer, gplayback_text *inner) {
         int inner_word_idx = 0;
         gplayback_word_list_entry *inner_word_cursor = inner_line->words;
 
+        // Prevent "empty word matching"
+        if (outer_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_SPACE ||
+            outer_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_TAB ||
+            outer_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_NEWLINE) {
+          continue;
+        }
+
         do {
           if (inner_word_cursor->item.match != NULL) {
+            continue;
+          }
+
+          // Prevent "empty word matching"
+          if (inner_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_SPACE ||
+              inner_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_TAB ||
+              inner_word_cursor->item.ptr[0] == GPLAYBACK_TOKEN_NEWLINE) {
             continue;
           }
 

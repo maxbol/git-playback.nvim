@@ -1,3 +1,6 @@
+#ifndef ARRAYS_H
+#define ARRAYS_H
+
 #define da_append(xs, x)                                                       \
   do {                                                                         \
     if (xs.count >= xs.capacity) {                                             \
@@ -47,3 +50,5 @@
     da_free(xs);                                                               \
     xs->items = malloc(xs->capacity * sizeof(*xs->items));                     \
   } while (0)
+
+#endif /* ARRAYS_H */
