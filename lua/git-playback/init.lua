@@ -10,6 +10,55 @@ if not import_ok then
   return
 end
 
+local function insert_word(modekey)
+  return function(current_pos, start_pos, src)
+    local keys = { modekey }
+
+    for i = 0, #src do
+      local char = src:sub(i, i)
+      if char == "\n" then
+        table.insert(keys, "<CR>")
+      else
+        table.insert(keys, char)
+      end
+    end
+
+    table.insert(keys, "<ESC>l")
+
+    local cursor = {
+      line = current_pos.line,
+      column = current_pos.column + #src,
+    }
+    return { keys = keys, cursor = cursor }
+  end
+end
+
+local function insert_row(modekey)
+  return function(current_pos, start_pos, src)
+    print("Inserting row with modekey " .. modekey)
+    local keys = { modekey }
+
+    for i = 0, #src - 1 do
+      local char = src:sub(i, i)
+      if char == "\n" then
+        table.insert(keys, "<CR>")
+      else
+        table.insert(keys, char)
+      end
+    end
+
+    -- table.insert(keys, "<CR>")
+    table.insert(keys, "<ESC>")
+
+    local cursor = {
+      -- line = current_pos.line,
+      line = modekey == "o" and current_pos.line + 1 or current_pos.line,
+      column = #src - 1,
+    }
+    return { keys = keys, cursor = cursor }
+  end
+end
+
 local operations = {
   goto_position = function(pos, next_pos)
     local keys = {}
@@ -21,7 +70,7 @@ local operations = {
         else
           table.insert(keys, "k")
         end
-      else
+      elseif pos.line < next_pos.line then
         local linediff = next_pos.line - pos.line
         if linediff > 1 then
           table.insert(keys, linediff .. "j")
@@ -29,56 +78,33 @@ local operations = {
           table.insert(keys, "j")
         end
       end
-      if pos.column ~= 0 then table.insert(keys, "^") end
+      if pos.column ~= 0 then
+        table.insert(keys, "^")
+        pos.column = 0
+      end
     end
-    if next_pos.column > 1 then
-      table.insert(keys, next_pos.column .. "l")
-    elseif next_pos.column == 1 then
-      table.insert(keys, "l")
+    if pos.column ~= next_pos.column then
+      if next_pos.column == 0 then
+        table.insert(keys, "^")
+      else
+        local coldiff = next_pos.column - pos.column
+        if coldiff > 1 then
+          table.insert(keys, coldiff .. "l")
+        elseif coldiff == 1 then
+          table.insert(keys, "l")
+        elseif coldiff == -1 then
+          table.insert(keys, "h")
+        elseif coldiff < -1 then
+          table.insert(keys, -coldiff .. "h")
+        end
+      end
     end
     return { keys = keys, cursor = next_pos }
   end,
-  insert_word_after = function(current_pos, start_pos, src)
-    local keys = { "i" }
-
-    for i = 0, #src do
-      local char = src:sub(i, i)
-      if char == "\n" then
-        table.insert(keys, "<CR>")
-      else
-        table.insert(keys, char)
-      end
-    end
-
-    table.insert(keys, "<ESC>")
-
-    local cursor = {
-      line = current_pos.line,
-      column = current_pos.column + #src,
-    }
-    return { keys = keys, cursor = cursor }
-  end,
-  insert_row_after = function(current_pos, start_pos, src)
-    local keys = { "I" }
-
-    for i = 0, #src - 1 do
-      local char = src:sub(i, i)
-      if char == "\n" then
-        table.insert(keys, "<CR>")
-      else
-        table.insert(keys, char)
-      end
-    end
-
-    table.insert(keys, "<CR>")
-    table.insert(keys, "<ESC>")
-
-    local cursor = {
-      line = current_pos.line + 1,
-      column = #src,
-    }
-    return { keys = keys, cursor = cursor }
-  end,
+  insert_word_before = insert_word("i"),
+  insert_word_after = insert_word("a"),
+  insert_row_before = insert_row("O"),
+  insert_row_after = insert_row("o"),
   move_rows = function(current_pos, start_pos, no_of_lines, move_amount)
     local keys = { "V" }
     local abs_move_amount = math.abs(move_amount)
@@ -133,10 +159,10 @@ local operations = {
   end,
   delete_words = function(current_pos, start_pos, char_len)
     local keys = { "v" }
-    if char_len > 1 then
-      table.insert(keys, char_len .. "l")
-    else
-      table.insert("l")
+    if char_len > 2 then
+      table.insert(keys, (char_len - 1) .. "l")
+    elseif char_len == 2 then
+      table.insert(keys, "l")
     end
     table.insert(keys, "d")
     return { keys = keys, cursor = start_pos }
@@ -146,7 +172,7 @@ local operations = {
     return { keys = keys, cursor = start_pos }
   end,
   split_rows = function(current_pos, start_pos)
-    local keys = { "i", "<CR>", "<ESC>" }
+    local keys = { "a", "<CR>", "<ESC>" }
     local cursor = {
       line = current_pos.line + 1,
       column = 0,
@@ -157,79 +183,10 @@ local operations = {
 
 local M = {}
 
-M.getKeysFromPatch = function(patch)
-  local ok, keys = pcall(playback.getPatchKeys, { operations = operations }, patch)
-
-  if not ok then
-    error("Patch application: " .. keys)
-    return ERR_C_ERROR
-  end
-
-  return keys
-end
-
-M.processPatch = function(lhs, patch)
-  local keys = M.getKeysFromPatch(patch)
-  if keys == ERR_C_ERROR then return keys end
-
-  local filetype = vim.bo.filetype
-
-  vim.cmd("tabnew")
-  vim.cmd("setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap")
-  vim.cmd("setlocal filetype=" .. filetype)
-
-  local bufnr = vim.api.nvim_win_get_buf(0)
-
-  local lhs_lines = {}
-  for line in lhs:gmatch("[^\r\n]+") do
-    table.insert(lhs_lines, line)
-  end
-  vim.api.nvim_buf_set_lines(0, 0, -1, false, lhs_lines)
-
-  local speed = vim.g.playback_speed or 100
-
-  local i = 1
-  PrintNextKey = vim.schedule_wrap(function()
-    if bufnr ~= vim.api.nvim_get_current_buf() then
-      print("Aborted playback")
-      return
-    end
-    local key = keys[i]
-    if not key then return end
-    vim.api.nvim_input(key)
-    i = i + 1
-    local t = vim.uv.new_timer()
-    t:start(speed, 0, PrintNextKey)
-  end)
-
-  local t = vim.uv.new_timer()
-  t:start(speed, 0, PrintNextKey)
-  -- vim.defer_fn(PrintNextKey, 10)
-end
-
-local function sysExec(cmd)
-  local f = assert(io.popen(cmd, "r"))
-  local s = assert(f:read("*a"))
-  f:close()
-  return s
-end
-
 M.playbackFromCommit = function(lhs_commit, rhs_commit, file)
   local ok
-
   local lhs, rhs
-
-  -- if not lhs_commit then
-  --   lhs = sysExec("cat " .. file)
-  -- else
-  --   lhs = sysExec("git show " .. lhs_commit .. ":" .. file)
-  -- end
-  --
-  -- if not rhs_commit then
-  --   rhs = sysExec("cat " .. file)
-  -- else
-  --   rhs = sysExec("git show " .. rhs_commit .. ":" .. file)
-  -- end
+  local keys
 
   if not lhs_commit then
     ok, lhs = pcall(playback.showFileAtPath, file)
@@ -249,43 +206,57 @@ M.playbackFromCommit = function(lhs_commit, rhs_commit, file)
   end
 
   if not ok then
-    error("RHS File retrieval: " .. lhs)
+    error("RHS File retrieval: " .. rhs)
     return ERR_C_ERROR
   end
 
-  local diff, patch
+  ok, keys = pcall(playback.getDiffKeys, { operations = operations }, lhs, rhs)
 
-  ok, diff = pcall(playback.generateDiff, lhs, rhs)
   if not ok then
-    error("Diff generation: " .. diff)
-    return ERR_C_ERROR
+    error("Patch application: " .. keys)
+    return
   end
 
-  -- local diffdebug
-  -- ok, diffdebug = pcall(playback.debugprintDiff, diff)
-  -- if not ok then
-  --   error("Diff debug print: " .. diffdebug)
-  --   return ERR_C_ERROR
-  -- end
-  --
-  -- print(diffdebug)
+  print("Keys: " .. vim.inspect(keys))
 
-  ok, patch = pcall(playback.generatePatch, diff)
-  if not ok then
-    error("Patch generation: " .. patch)
-    return ERR_C_ERROR
+  local filetype = vim.bo.filetype
+
+  vim.cmd("tabnew")
+  vim.cmd("setlocal buftype=nofile bufhidden=wipe nobuflisted noswapfile nowrap noautoindent filetype=" .. filetype)
+  vim.cmd("set paste")
+
+  local bufnr = vim.api.nvim_win_get_buf(0)
+
+  local lhs_lines = {}
+  for line in lhs:gmatch("[^\r\n]*\r?\n") do
+    line = line:gsub("\n", "")
+    table.insert(lhs_lines, line)
   end
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, lhs_lines)
 
-  -- local patchdebug
-  -- ok, patchdebug = pcall(playback.debugprintPatch, patch)
-  -- if not ok then
-  --   error("Diff debug print: " .. diffdebug)
-  --   return ERR_C_ERROR
-  -- end
-  --
-  -- -- print(patchdebug)
+  local speed = vim.g.playback_speed or 100
 
-  M.processPatch(lhs, patch)
+  local i = 1
+  PrintNextKey = vim.schedule_wrap(function()
+    if bufnr ~= vim.api.nvim_get_current_buf() then
+      print("Aborted playback")
+      vim.cmd("set nopaste")
+      return
+    end
+    local key = keys[i]
+    if not key then
+      print("Playback complete")
+      vim.cmd("set nopaste")
+      return
+    end
+    vim.api.nvim_input(key)
+    i = i + 1
+    local t = vim.uv.new_timer()
+    t:start(speed, 0, PrintNextKey)
+  end)
+
+  local t = vim.uv.new_timer()
+  t:start(speed, 0, PrintNextKey)
 end
 
 return M

@@ -10,30 +10,41 @@ int main() {
   git_libgit2_init();
 
   // fooo
-  gplayback_slice lhs = show_file_at_rev("test.txt", "HEAD");
-  gplayback_slice rhs = show_file_at_path("test.txt");
-  /*gplayback_slice lhs = strslice(*/
-  /*    "Hello, world!\nBar\nbie\nYoyo\nGogo\nThis is a test.\nFubu\n\n");*/
-  /*gplayback_slice rhs =*/
-  /*    strslice("Hello, world!\nThis is not a test.\nBar bie doll\nYoyo\n");*/
+  gplayback_slice lhs = show_file_at_rev("c/assert.c", "HEAD");
+  gplayback_slice rhs = show_file_at_path("c/assert.c");
 
-  printf("Hello, world!\n");
+  printf("LHS\n===\n%.*s\n===\n\n", (int)lhs.len, lhs.ptr);
+  printf("RHS\n===\n%.*s\n===\n\n", (int)rhs.len, rhs.ptr);
 
   gplayback_diff diff = generate_diff(lhs, rhs);
 
   printf("Original diff:\n");
-  char out[4096];
-  debug_diff(diff, out, 4096);
-  printf("%s\n", out);
+  char *original_diff_out = debug_diff(diff);
+  printf("%s\n", original_diff_out);
+  free(original_diff_out);
 
-  gplayback_patch patch = generate_patch(diff);
+  gplayback_patch patch = generate_patch(&diff);
 
   printf("Diff after patch generation:\n");
-  debug_diff(diff, out, 4096);
-  printf("%s\n", out);
+  /*char *patched_diff_out = debug_diff(diff);*/
+  /*printf("%s\n", patched_diff_out);*/
+  /*free(patched_diff_out);*/
 
-  debug_patch(patch, out, 4096);
-  printf("%s\n", out);
+  if (patch.first == NULL) {
+    printf("Patch is empty\n");
+  } else {
+    printf("Patch is NOT empty\n");
+  }
+
+  char *patch_out = debug_patch(patch);
+  printf("%s\n", patch_out);
+  free(patch_out);
+
+  free_patch(patch);
+  free_diff(diff);
+
+  free_slice_buf(lhs);
+  free_slice_buf(rhs);
 
   return 0;
 }

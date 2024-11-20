@@ -7,3 +7,5 @@
 **/*.o
 .direnv/
 /c_test
+compile_commands.json
+.cache/

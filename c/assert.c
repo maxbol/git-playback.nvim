@@ -1,12 +1,11 @@
+#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-#if LUA_EXCEPTIONS
+#ifdef LUA_EXCEPTIONS
 #include <lauxlib.h>
 #include <lua.h>
-
-foo thing() {}
 
 lua_State *L = NULL;
 

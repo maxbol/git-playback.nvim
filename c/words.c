@@ -1,12 +1,14 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "arrays.h"
 #include "assert.h"
 #include "constants.h"
 #include "log.h"
 #include "segments.h"
+#include "writestr.h"
 
 typedef struct gplayback_word {
   const char *ptr;
@@ -64,11 +66,74 @@ typedef struct {
     v_last_entry = entry;                                                      \
   } while (0)
 
-gplayback_word_list_entry *delete_word(gplayback_word_list_entry *word) {
-  if (word == NULL) {
-    dbg_log("Warning: Trying to delete NULL word, this has no effect\n");
-    return word;
+gplayback_word_list_entry *bol(gplayback_word_list_entry *word) {
+  assert(word != NULL, "Can not find BOL based on NULL pointer");
+  while (word->prev != NULL &&
+         word->prev->item.line_idx == word->item.line_idx) {
+    word = word->prev;
   }
+  return word;
+}
+
+gplayback_word_list_entry *eol(gplayback_word_list_entry *word) {
+  assert(word != NULL, "Can not find EOL based on NULL pointer");
+  while (word->next != NULL &&
+         word->next->item.line_idx == word->item.line_idx) {
+    word = word->next;
+  }
+  return word;
+}
+
+gplayback_word_list_entry *lineprev(gplayback_word_list_entry *word) {
+  assert(word != NULL, "Can not take prev line word from NULL pointer");
+  if (word->prev != NULL && word->prev->item.line_idx == word->item.line_idx) {
+    word = word->prev;
+  }
+  return word;
+}
+
+gplayback_word_list_entry *linenext(gplayback_word_list_entry *word) {
+  assert(word != NULL, "Can not take next line word from NULL pointer");
+  if (word->next != NULL && word->next->item.line_idx == word->item.line_idx) {
+    word = word->next;
+  }
+  return word;
+}
+
+char *debug_word_list(const char *label, gplayback_word_list word_list) {
+  char *out = malloc(512);
+  size_t offset = 0;
+  size_t capacity = 512;
+
+  memset(out, 0, 512);
+
+#define w(...) writestr(out, offset, capacity, __VA_ARGS__)
+
+  gplayback_word_list_entry *word_entry = word_list.first;
+  if (word_entry != NULL) {
+    do {
+      gplayback_word word = word_entry->item;
+      if (word.match == NULL) {
+        w("[UNMATCHED]");
+      }
+      w("[%.*s] word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+        (int)strlen(label), label, word.line_idx, word.col_idx, word.len,
+        word.word_id, word.len, word.ptr);
+      if (word.match != NULL) {
+        w("   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+          word.match->item.line_idx, word.match->item.col_idx,
+          word.match->item.len, word.match->item.word_id, word.match->item.len,
+          word.match->item.ptr);
+      }
+    } while ((word_entry = word_entry->next));
+  }
+
+  return out;
+}
+
+gplayback_word_list_entry *delete_word(gplayback_word_list_entry *word) {
+  assert(word != NULL, "Can not delete NULL word");
+
   gplayback_word_list_entry *prev = word->prev;
   gplayback_word_list_entry *next = word->next;
 
@@ -87,11 +152,7 @@ gplayback_word_list_entry *delete_word(gplayback_word_list_entry *word) {
 
 gplayback_word_list_entry *
 delete_words_until_eol(gplayback_word_list_entry *word) {
-  if (word == NULL) {
-    dbg_log("Warning: Trying to delete words until EOL from NULL anchor word, "
-            "this has no effect\n");
-    return word;
-  }
+  assert(word != NULL, "Can not delete words until EOL based on NULL pointer");
 
   int line_idx = word->item.line_idx;
 
@@ -123,31 +184,37 @@ void free_word_list(gplayback_word_list list) {
   }
 }
 
-int get_next_wordid(gplayback_word_list_entry *first_word) {
+int get_last_wordid(gplayback_word_list_entry *first_word) {
   if (first_word == NULL) {
     return 0;
   }
-  int word_id = first_word->item.word_id;
-  while (first_word->next != NULL) {
-    first_word = first_word->next;
+  int word_id = 0;
+  gplayback_flags dbg_list = {0};
+  do {
+    if (dbg_list.count > first_word->item.word_id &&
+        dbg_list.items[first_word->item.word_id] == true) {
+      dbg_log("Duplicate word id %d found in word list\n",
+              first_word->item.word_id);
+    }
+    da_replace(dbg_list, first_word->item.word_id, true);
     if (first_word->item.word_id > word_id) {
       word_id = first_word->item.word_id;
     }
-  }
+  } while ((first_word = first_word->next));
   return word_id;
 }
 
 gplayback_word_list_entry *insert_word_copy(gplayback_word_list_entry *src,
                                             gplayback_word_list_entry *dest) {
-  if (src == NULL || dest == NULL) {
-    dbg_log("Warning: Trying to insert NULL word, this has no effect\n");
-    return dest;
-  }
+  assert(src != NULL, "Can not insert NULL word");
+  assert(dest != NULL, "Can not insert word to NULL pointer");
+
   gplayback_word_list_entry *src_copy =
       malloc(sizeof(gplayback_word_list_entry));
 
   *src_copy = *src;
-  src_copy->item.word_id = get_next_wordid(find_first_word_in_wordlist(dest));
+  src_copy->item.word_id =
+      get_last_wordid(find_first_word_in_wordlist(dest)) + 1;
 
   gplayback_word_list_entry *prev = dest->prev;
 
@@ -200,9 +267,13 @@ bool is_whitespace(char c) {
   return c == GPLAYBACK_TOKEN_SPACE || c == GPLAYBACK_TOKEN_TAB;
 }
 
+bool is_whitespace_or_newline(char c) {
+  return is_whitespace(c) || c == GPLAYBACK_TOKEN_NEWLINE;
+}
+
 void mark_word_visited(gplayback_flags *visited,
                        gplayback_word_list_entry *word, bool visited_state) {
-  da_replace(visited, word->item.word_id, visited_state);
+  da_replace((*visited), word->item.word_id, visited_state);
 }
 
 void mark_words_visited_until_eol(gplayback_flags *visited,
@@ -459,15 +530,21 @@ gplayback_word_list word_list(gplayback_slice text) {
   return word_list;
 }
 
-int word_subset_of_word(gplayback_word haystack, gplayback_word needle) {
+int word_subset_of_word(gplayback_word haystack, gplayback_word needle,
+                        bool strict) {
   if (needle.len > haystack.len) {
     return -1;
   }
 
   int match_count = 0;
   for (int i = 0; i < haystack.len; i++) {
-    if (word_matchchr(needle.ptr[match_count]) ==
-        word_matchchr(haystack.ptr[i])) {
+    char needle_char = strict ? needle.ptr[match_count]
+                              : word_matchchr(needle.ptr[match_count]);
+
+    char haystack_char =
+        strict ? haystack.ptr[i] : word_matchchr(haystack.ptr[i]);
+
+    if (needle_char == haystack_char) {
       match_count++;
     } else {
       match_count = 0;

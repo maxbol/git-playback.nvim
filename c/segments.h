@@ -28,8 +28,10 @@ typedef struct {
 gplayback_segment subsegment(gplayback_segment segment, int start, int len);
 const char *segmentptr(gplayback_segment segment);
 gplayback_slice strslice(const char *ptr);
-gplayback_slice subslice(const char *ptr, int offset, int len);
+gplayback_slice subslice(char *ptr, int offset, int len);
 char *slice_to_buf(gplayback_slice slice);
+void free_slice_buf(gplayback_slice slice);
+gplayback_slice copy_slice(gplayback_slice slice);
 
 #define slicecmp(a, b, c)                                                      \
   do {                                                                         \

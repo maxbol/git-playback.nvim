@@ -16,6 +16,7 @@ build = {
     LUA_BINDIR = "$(LUA_BINDIR)",
     -- LUA_INCDIR = "$(LUA_INCDIR)",
     LUA = "$(LUA)",
+    OPTS = "-DLUA_EXCEPTIONS",
   },
   install_variables = {
     INST_PREFIX = "$(PREFIX)",

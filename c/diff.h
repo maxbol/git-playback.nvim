@@ -23,6 +23,7 @@ typedef struct {
 typedef struct {
   gplayback_word_list words;
   gplayback_lines lines;
+  gplayback_slice slice;
 } gplayback_text;
 
 typedef struct {
@@ -30,8 +31,8 @@ typedef struct {
   gplayback_text rhs;
 } gplayback_diff;
 
-int debug_diff(gplayback_diff diff, char out[], size_t out_len);
-void free_diff(gplayback_diff *diff);
+char *debug_diff(gplayback_diff diff);
+void free_diff(gplayback_diff diff);
 gplayback_lines lines(gplayback_word_list word_list);
 bool lines_identical(gplayback_line *a, gplayback_line *b);
 void match_lines(gplayback_text *outer, gplayback_text *inner);

@@ -15,7 +15,6 @@ typedef struct {
   int type;
   void *data;
   gplayback_cursorpos cursor;
-  gplayback_cursorpos cursor_after;
 } gplayback_vm_operation;
 
 typedef struct gplayback_vm_operation_entry {
@@ -31,6 +30,14 @@ typedef struct {
 typedef struct {
   gplayback_slice src;
 } gplayback_vm_op_insert_row_after;
+
+typedef struct {
+  gplayback_slice src;
+} gplayback_vm_op_insert_word_before;
+
+typedef struct {
+  gplayback_slice src;
+} gplayback_vm_op_insert_row_before;
 
 typedef struct {
   size_t char_len;
@@ -60,7 +67,9 @@ typedef struct {
   int move_amount;
 } moveset;
 
-int debug_patch(gplayback_patch patch, char out[], size_t out_len);
-gplayback_patch generate_patch(gplayback_diff diff);
+char *debug_patch(gplayback_patch patch);
+void free_operation_entry(gplayback_vm_operation_entry *entry);
+void free_patch(gplayback_patch patch);
+gplayback_patch generate_patch(gplayback_diff *diff);
 
 #endif // !PATCH_H

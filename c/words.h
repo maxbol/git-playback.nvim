@@ -1,11 +1,12 @@
 #ifndef WORDS_H
 #define WORDS_H
+#include <stdbool.h>
 #include <stdlib.h>
 
 #include "segments.h"
 
 typedef struct gplayback_word {
-  const char *ptr;
+  char *ptr;
   struct gplayback_word_list_entry *match;
   int line_idx;
   int col_idx;
@@ -58,13 +59,18 @@ typedef struct {
     v_last_entry = entry;                                                      \
   } while (0)
 
+gplayback_word_list_entry *bol(gplayback_word_list_entry *word);
+gplayback_word_list_entry *eol(gplayback_word_list_entry *word);
+gplayback_word_list_entry *lineprev(gplayback_word_list_entry *word);
+gplayback_word_list_entry *linenext(gplayback_word_list_entry *word);
+char *debug_word_list(const char *label, gplayback_word_list word_list);
 gplayback_word_list_entry *delete_word(gplayback_word_list_entry *word);
 gplayback_word_list_entry *
 delete_words_until_eol(gplayback_word_list_entry *word);
 gplayback_word_list_entry *
 find_first_word_in_wordlist(gplayback_word_list_entry *word);
 void free_word_list(gplayback_word_list list);
-int get_next_wordid(gplayback_word_list_entry *first_word);
+int get_last_wordid(gplayback_word_list_entry *first_word);
 gplayback_word_list_entry *insert_word_copy(gplayback_word_list_entry *src,
                                             gplayback_word_list_entry *dest);
 gplayback_word_list_entry *
@@ -72,6 +78,8 @@ insert_words_copy_until_eol(gplayback_word_list_entry *src,
                             gplayback_word_list_entry *dest);
 bool is_dirty_line(gplayback_word_list_entry *word);
 bool is_word_visited(gplayback_flags visited, gplayback_word_list_entry word);
+bool is_whitespace(char c);
+bool is_whitespace_or_newline(char c);
 void mark_word_visited(gplayback_flags *visited,
                        gplayback_word_list_entry *word, bool visited_state);
 void mark_words_visited_until_eol(gplayback_flags *visited,
@@ -89,6 +97,6 @@ void modify_words_linenum_backwards(gplayback_word_list_entry *start, int limit,
 void modify_words_linenum_until_eol(gplayback_word_list_entry *word,
                                     int modify_amount);
 gplayback_word_list word_list(gplayback_slice text);
-int word_subset_of_word(gplayback_word a, gplayback_word b);
+int word_subset_of_word(gplayback_word a, gplayback_word b, bool strict);
 
 #endif // !WORDS_H

@@ -31,18 +31,21 @@
 
 #define da_replace(xs, i, x)                                                   \
   do {                                                                         \
-    if (i >= xs->capacity) {                                                   \
-      xs->capacity = (i + 1) * 2;                                              \
-      xs->items = realloc(xs->items, xs->capacity * sizeof(*xs->items));       \
+    if (i >= xs.capacity) {                                                    \
+      xs.capacity = (i + 1) * 2;                                               \
+      xs.items = realloc(xs.items, xs.capacity * sizeof(*xs.items));           \
     }                                                                          \
-    xs->items[i] = x;                                                          \
+    if (i >= xs.count) {                                                       \
+      xs.count = i + 1;                                                        \
+    }                                                                          \
+    xs.items[i] = x;                                                           \
   } while (0)
 
 #define da_free(xs)                                                            \
   do {                                                                         \
-    free(xs->items);                                                           \
-    xs->items = NULL;                                                          \
-    xs->count = 0;                                                             \
+    free(xs.items);                                                            \
+    xs.items = NULL;                                                           \
+    xs.count = 0;                                                              \
   } while (0)
 
 #define da_empty(xs)                                                           \

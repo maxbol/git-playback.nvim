@@ -2,16 +2,19 @@
 #define ASSERT_H
 #include <stdio.h>
 
-#define LUA_EXCEPTIONS true
-
+#ifdef LUA_EXCEPTIONS
+#include <lua.h>
+void set_err_lua_state(lua_State *state);
+#else
 void set_err_lua_state(void *state);
+#endif
 void clear_err_lua_state();
 void error_f(const char *message);
 
 #define error(...)                                                             \
   {                                                                            \
-    char out[1024];                                                            \
-    snprintf(out, 1024, __VA_ARGS__);                                          \
+    char out[4096];                                                            \
+    snprintf(out, 4096, __VA_ARGS__);                                          \
     error_f(out);                                                              \
   }
 

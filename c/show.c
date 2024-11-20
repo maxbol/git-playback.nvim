@@ -4,7 +4,6 @@
 #include <unistd.h>
 
 #include "assert.h"
-#include "git2/global.h"
 #include "segments.h"
 
 #define REPO ".git"
@@ -22,6 +21,7 @@ gplayback_slice show_file_at_path(const char *file_path) {
   rewind(file);
 
   char *txt_ptr = malloc(sizeof(char) * (file_size + 1));
+  memset(txt_ptr, 0, file_size + 1);
   fread(txt_ptr, file_size, 1, file);
 
   gplayback_slice txt = strslice(txt_ptr);
@@ -83,8 +83,10 @@ gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
 
   blob = (git_blob *)obj;
 
-  char *txt_ptr = malloc(sizeof(char) * (git_blob_rawsize(blob) + 1));
-  strncpy(txt_ptr, git_blob_rawcontent(blob), git_blob_rawsize(blob));
+  size_t blob_raw_size = git_blob_rawsize(blob);
+  char *txt_ptr = malloc(sizeof(char) * (blob_raw_size + 1));
+  memset(txt_ptr, 0, blob_raw_size + 1);
+  strncpy(txt_ptr, git_blob_rawcontent(blob), blob_raw_size);
   gplayback_slice txt = strslice(txt_ptr);
 
   // Cleanup
