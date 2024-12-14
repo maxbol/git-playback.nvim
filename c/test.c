@@ -3,32 +3,37 @@
 
 #include "diff.h"
 #include "patch.h"
-#include "segments.h"
 #include "show.h"
+#include "slice.h"
+#include "writestr.h"
 
 int main() {
   git_libgit2_init();
 
   // fooo
-  gplayback_slice lhs = show_file_at_rev("c/assert.c", "HEAD");
-  gplayback_slice rhs = show_file_at_path("c/assert.c");
+  gplayback_slice lhs = show_file_at_rev("test.txt", "HEAD~2");
+  gplayback_slice rhs = show_file_at_path("test.txt");
+  /*gplayback_slice rhs = show_file_at_rev("test.txt", "HEAD");*/
 
   printf("LHS\n===\n%.*s\n===\n\n", (int)lhs.len, lhs.ptr);
   printf("RHS\n===\n%.*s\n===\n\n", (int)rhs.len, rhs.ptr);
 
-  gplayback_diff diff = generate_diff(lhs, rhs);
+  gplayback_diff diff = diff_generate(
+      lhs, rhs,
+      (gplayback_generate_diff_opts){.moveline_entropy_treshold = 0.5,
+                                     .moveword_min_word_amount = 1});
 
   printf("Original diff:\n");
-  char *original_diff_out = debug_diff(diff);
+  char *original_diff_out = diff_debug(&diff);
   printf("%s\n", original_diff_out);
   free(original_diff_out);
 
-  gplayback_patch patch = generate_patch(&diff);
+  gplayback_patch patch = patch_generate(&diff);
 
   printf("Diff after patch generation:\n");
-  /*char *patched_diff_out = debug_diff(diff);*/
-  /*printf("%s\n", patched_diff_out);*/
-  /*free(patched_diff_out);*/
+  char *patched_diff_out = diff_debug(&patch.diff);
+  printf("%s\n", patched_diff_out);
+  free(patched_diff_out);
 
   if (patch.first == NULL) {
     printf("Patch is empty\n");
@@ -36,15 +41,17 @@ int main() {
     printf("Patch is NOT empty\n");
   }
 
-  char *patch_out = debug_patch(patch);
+  char *patch_out = patch_debug(&patch);
   printf("%s\n", patch_out);
   free(patch_out);
 
-  free_patch(patch);
-  free_diff(diff);
+  patch_free(&patch);
+  diff_free(&diff);
 
-  free_slice_buf(lhs);
-  free_slice_buf(rhs);
+  slice_free_buf(lhs);
+  slice_free_buf(rhs);
+
+  printf("Done\n");
 
   return 0;
 }

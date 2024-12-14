@@ -46,7 +46,7 @@ void unpack_result(lua_State *L, gplayback_cursorpos *cursor,
   for (int i = 1; i <= keys_len; i++) {
     lua_rawgeti(L, keys_idx, i);
     const char *key = lua_tostring(L, -1);
-    da_append_ptr(keys, key);
+    da_append((*keys), key);
   }
 
   lua_pushstring(L, "cursor");
@@ -109,11 +109,11 @@ int l_get_diff_keys(lua_State *L) {
   const char *lhs_str = luaL_checkstring(L, 2);
   const char *rhs_str = luaL_checkstring(L, 3);
 
-  gplayback_slice lhs = strslice(lhs_str);
-  gplayback_slice rhs = strslice(rhs_str);
+  gplayback_slice lhs = slice_from_string(lhs_str);
+  gplayback_slice rhs = slice_from_string(rhs_str);
 
-  gplayback_diff diff = generate_diff(lhs, rhs);
-  gplayback_patch patch = generate_patch(&diff);
+  gplayback_diff diff = diff_generate(lhs, rhs);
+  gplayback_patch patch = patch_generate(&diff);
 
   check_usr_op(L, "insert_word_after", oidx);
   int ref_insert_word_after = lua_ref(L, true);
@@ -263,8 +263,8 @@ int l_get_diff_keys(lua_State *L) {
   }
 
   free(keys.items);
-  free_patch(patch);
-  free_diff(diff);
+  patch_free(patch);
+  diff_free(diff);
 
   clear_err_lua_state();
   return 1;

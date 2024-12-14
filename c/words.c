@@ -6,507 +6,555 @@
 #include "arrays.h"
 #include "assert.h"
 #include "constants.h"
+#include "escapestr.h"
 #include "log.h"
-#include "segments.h"
+#include "slice.h"
+#include "words.h"
 #include "writestr.h"
 
-typedef struct gplayback_word {
-  const char *ptr;
-  struct gplayback_word_list_entry *match;
-  int line_idx;
-  int col_idx;
-  int len;
-  int word_id;
-} gplayback_word;
-
-typedef struct gplayback_word_list_entry {
-  gplayback_word item;
-  struct gplayback_word_list_entry *next;
-  struct gplayback_word_list_entry *prev;
-} gplayback_word_list_entry;
-
-typedef struct {
-  gplayback_word_list_entry **items;
-  size_t count;
-  size_t capacity;
-} gplayback_word_list_entry_refs;
-
-typedef struct {
-  gplayback_word_list_entry *first;
-} gplayback_word_list;
-
-typedef struct {
-  bool *items;
-  size_t count;
-  size_t capacity;
-} gplayback_flags;
-
-// test
-
-#define append_wordlist_word(v_ptr, v_len, v_line_idx, v_col_idx, v_word_id,   \
-                             v_last_entry, v_word_list)                        \
-  do {                                                                         \
-    gplayback_word_list_entry *entry =                                         \
-        malloc(sizeof(gplayback_word_list_entry));                             \
-                                                                               \
-    entry->item.ptr = v_ptr;                                                   \
-    entry->item.len = v_len;                                                   \
-    entry->item.line_idx = v_line_idx;                                         \
-    entry->item.col_idx = v_col_idx - entry->item.len;                         \
-    entry->item.match = NULL;                                                  \
-    entry->item.word_id = v_word_id;                                           \
-                                                                               \
-    if (v_last_entry != NULL) {                                                \
-      v_last_entry->next = entry;                                              \
-      entry->prev = v_last_entry;                                              \
-    } else {                                                                   \
-      entry->prev = NULL;                                                      \
-      v_word_list.first = entry;                                               \
-    }                                                                          \
-    v_last_entry = entry;                                                      \
-  } while (0)
-
-gplayback_word_list_entry *bol(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not find BOL based on NULL pointer");
-  while (word->prev != NULL &&
-         word->prev->item.line_idx == word->item.line_idx) {
-    word = word->prev;
-  }
-  return word;
+gplayback_word_list_entry words_get_entry(gplayback_word_list *word_list,
+                                          unsigned int word_id) {
+  assert(word_id != 0, "Trying to get word with zero ID, this is not allowed");
+  assert(word_id < word_list->entries.head,
+         "Trying to get word with ID out of bounds");
+  gplayback_word_list_entry entry = word_list->entries.items[word_id];
+  assert(entry.item.word_id != 0,
+         "Word at ID %d seems to be uninstantiated, this will lead to "
+         "undefined behavior",
+         entry.item.word_id);
+  return entry;
 }
 
-gplayback_word_list_entry *eol(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not find EOL based on NULL pointer");
-  while (word->next != NULL &&
-         word->next->item.line_idx == word->item.line_idx) {
-    word = word->next;
-  }
-  return word;
+gplayback_word_list_entry *
+words_get_entry_pointer(gplayback_word_list *word_list, unsigned int word_id) {
+  assert(word_id != 0,
+         "Trying to get word pointer with zero ID, this is not allowed");
+  assert(word_id < word_list->entries.head,
+         "Trying to get word with ID out of bounds");
+  gplayback_word_list_entry *entry = &word_list->entries.items[word_id];
+  assert(entry->item.word_id != 0,
+         "Word at ID %d seems to be uninstantiated, this will lead to "
+         "undefined behavior",
+         entry->item.word_id);
+  return entry;
 }
 
-gplayback_word_list_entry *lineprev(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not take prev line word from NULL pointer");
-  if (word->prev != NULL && word->prev->item.line_idx == word->item.line_idx) {
-    word = word->prev;
+unsigned int words_create_entry(gplayback_word_list *word_list,
+                                gplayback_word word) {
+  if (word_list->entries.head >= WORD_LIST_LEN) {
+    error("Word list entry limit reached");
   }
-  return word;
+  word.word_id = word_list->entries.head++;
+  word_list->entries.items[word.word_id] = (gplayback_word_list_entry){
+      .item = word,
+  };
+
+  return word.word_id;
 }
 
-gplayback_word_list_entry *linenext(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not take next line word from NULL pointer");
-  if (word->next != NULL && word->next->item.line_idx == word->item.line_idx) {
-    word = word->next;
+/*
+ * Appends a word to the end of the word list. If last_word_entry is NULL, the
+ * word is appended at the end of the list, otherwise it is appended after the
+ * word designated by last_word_entry. However, this is presumed to be the last
+ * word of the list, so no care is taken to change the backwards references of
+ * subsequent words. `last_word_entry` should only be used in cases where the
+ * last entry is already known, and only for performance reasons. Returns the ID
+ * of the newly created word.
+ */
+unsigned int words_append(gplayback_word_list *word_list, gplayback_word word,
+                          gplayback_word_list_entry *last_word_entry) {
+  unsigned int new_word_id = words_create_entry(word_list, word);
+
+  if (word_list->first != 0) {
+    if (last_word_entry == NULL) {
+      unsigned int last_word_id = words_last(word_list);
+      assert(last_word_id != 0, "Last word ID can't be zero");
+      last_word_entry = words_get_entry_pointer(word_list, last_word_id);
+    }
+
+    gplayback_word_list_entry *new_word_entry =
+        words_get_entry_pointer(word_list, new_word_id);
+
+    new_word_entry->prev = last_word_entry->item.word_id;
+    last_word_entry->next = new_word_id;
+  } else {
+    word_list->first = new_word_id;
   }
-  return word;
+
+  return new_word_id;
 }
 
-char *debug_word_list(const char *label, gplayback_word_list word_list) {
-  char *out = malloc(512);
-  size_t offset = 0;
-  size_t capacity = 512;
+/*
+ * Inserts a word before the word designated by next_word_id. If next_word_id is
+ * zero, the word is inserted at the beginning of the list. Returns the ID of
+ * the newly created word.
+ *
+ * Note: Unline `words_append`, this function is safe to use for inserting a
+ * word anywhere in the list.
+ */
+unsigned int words_insert(gplayback_word_list *word_list, gplayback_word word,
+                          unsigned int next_word_id) {
+  unsigned int new_word_id = words_create_entry(word_list, word);
 
-  memset(out, 0, 512);
+  gplayback_word_list_entry *new_word =
+      words_get_entry_pointer(word_list, new_word_id);
 
-#define w(...) writestr(out, offset, capacity, __VA_ARGS__)
+  gplayback_word_list_entry *next_word =
+      words_get_entry_pointer(word_list, next_word_id);
 
-  gplayback_word_list_entry *word_entry = word_list.first;
-  if (word_entry != NULL) {
-    do {
-      gplayback_word word = word_entry->item;
-      if (word.match == NULL) {
-        w("[UNMATCHED]");
-      }
-      w("[%.*s] word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-        (int)strlen(label), label, word.line_idx, word.col_idx, word.len,
-        word.word_id, word.len, word.ptr);
-      if (word.match != NULL) {
-        w("   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
-          word.match->item.line_idx, word.match->item.col_idx,
-          word.match->item.len, word.match->item.word_id, word.match->item.len,
-          word.match->item.ptr);
-      }
-    } while ((word_entry = word_entry->next));
+  if (next_word->prev != 0) {
+    gplayback_word_list_entry *prev_word =
+        words_get_entry_pointer(word_list, next_word->prev);
+
+    prev_word->next = new_word_id;
+    new_word->prev = next_word->prev;
+  } else {
+    word_list->first = new_word_id;
   }
 
-  return out;
+  new_word->next = next_word_id;
+  next_word->prev = new_word_id;
+
+  return new_word_id;
 }
 
-gplayback_word_list_entry *delete_word(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not delete NULL word");
+unsigned int words_copy_line(gplayback_word_list *src_list,
+                             gplayback_word_list *dest_list,
+                             unsigned int src_start, unsigned int dest_before) {
+  unsigned int cursor = words_bol(src_list, src_start);
+  unsigned int dest_word_id = dest_before;
 
-  gplayback_word_list_entry *prev = word->prev;
-  gplayback_word_list_entry *next = word->next;
-
-  if (prev != NULL) {
-    prev->next = next;
+  while (cursor != 0) {
+    gplayback_word_list_entry src_word = words_get_entry(src_list, cursor);
+    gplayback_word word = src_word.item;
+    words_insert(dest_list, word, dest_word_id);
+    cursor = words_nextl(src_list, cursor);
   }
 
-  if (next != NULL) {
-    next->prev = prev;
+  return dest_word_id;
+}
+
+unsigned int words_delete(gplayback_word_list *word_list,
+                          unsigned int word_id) {
+  gplayback_word_list_entry *entry =
+      words_get_entry_pointer(word_list, word_id);
+
+  if (entry->prev != 0) {
+    gplayback_word_list_entry *prev =
+        words_get_entry_pointer(word_list, entry->prev);
+    prev->next = entry->next;
+  } else {
+    word_list->first = entry->next;
   }
 
-  free(word);
+  if (entry->next != 0) {
+    gplayback_word_list_entry *next =
+        words_get_entry_pointer(word_list, entry->next);
+    next->prev = entry->prev;
+  }
+
+  unsigned int next = entry->next;
+
+  *entry = (gplayback_word_list_entry){0};
 
   return next;
 }
 
-gplayback_word_list_entry *
-delete_words_until_eol(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not delete words until EOL based on NULL pointer");
+unsigned int words_delete_words_until_eol(gplayback_word_list *word_list,
+                                          unsigned int word_id) {
+  unsigned int line_idx = words_get_entry(word_list, word_id).item.line_idx;
 
-  int line_idx = word->item.line_idx;
-
-  do {
-    word = delete_word(word);
-    if (word != NULL && word->item.line_idx != line_idx) {
+  while (word_id != 0) {
+    gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+    if (entry.item.line_idx != line_idx) {
       break;
     }
-  } while (word != NULL);
-
-  return word;
-}
-
-gplayback_word_list_entry *
-find_first_word_in_wordlist(gplayback_word_list_entry *word) {
-  assert(word != NULL, "Can not find word based on NULL pointer");
-  while (word->prev != NULL) {
-    word = word->prev;
+    word_id = words_delete(word_list, word_id);
   }
-  return word;
-}
 
-void free_word_list(gplayback_word_list list) {
-  gplayback_word_list_entry *entry = list.first;
-  while (entry != NULL) {
-    gplayback_word_list_entry *next = entry->next;
-    free(entry);
-    entry = next;
-  }
-}
-
-int get_last_wordid(gplayback_word_list_entry *first_word) {
-  if (first_word == NULL) {
-    return 0;
-  }
-  int word_id = 0;
-  gplayback_flags dbg_list = {0};
-  do {
-    if (dbg_list.count > first_word->item.word_id &&
-        dbg_list.items[first_word->item.word_id] == true) {
-      dbg_log("Duplicate word id %d found in word list\n",
-              first_word->item.word_id);
-    }
-    da_replace(dbg_list, first_word->item.word_id, true);
-    if (first_word->item.word_id > word_id) {
-      word_id = first_word->item.word_id;
-    }
-  } while ((first_word = first_word->next));
   return word_id;
 }
 
-gplayback_word_list_entry *insert_word_copy(gplayback_word_list_entry *src,
-                                            gplayback_word_list_entry *dest) {
-  assert(src != NULL, "Can not insert NULL word");
-  assert(dest != NULL, "Can not insert word to NULL pointer");
-
-  gplayback_word_list_entry *src_copy =
-      malloc(sizeof(gplayback_word_list_entry));
-
-  *src_copy = *src;
-  src_copy->item.word_id =
-      get_last_wordid(find_first_word_in_wordlist(dest)) + 1;
-
-  gplayback_word_list_entry *prev = dest->prev;
-
-  if (prev != NULL) {
-    prev->next = src_copy;
+unsigned int words_find_line(gplayback_word_list *word_list,
+                             unsigned int line_idx) {
+  unsigned int cursor = word_list->first;
+  while (cursor != 0) {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    if (entry.item.line_idx == line_idx) {
+      return cursor;
+    }
+    cursor = entry.next;
   }
-
-  src_copy->prev = prev;
-  src_copy->next = dest;
-  dest->prev = src_copy;
-
-  return src_copy;
+  return 0;
 }
 
-gplayback_word_list_entry *
-insert_words_copy_until_eol(gplayback_word_list_entry *src,
-                            gplayback_word_list_entry *dest) {
-  if (src == NULL || dest == NULL) {
-    dbg_log("Warning: Trying to insert words until EOL from NULL word, "
-            "this has no effect\n");
-    return dest;
-  }
-
-  int line_idx = src->item.line_idx;
-
-  do {
-    dest = insert_word_copy(src, dest);
-    assert(dest != NULL, "Inserting word failed");
-    dest = dest->next;
-  } while ((src = src->next) && src->item.line_idx == line_idx);
-
-  return dest;
+/*
+ * Returns the ID of the next word in the word list if it exists, else returns 0
+ */
+unsigned int words_next(gplayback_word_list *word_list, unsigned int word_id) {
+  gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+  return entry.next;
 }
 
-bool is_dirty_line(gplayback_word_list_entry *start) {
-  int line_idx = start->item.line_idx;
+/*
+ * Returns the ID of the previous word in the word list if it exists, else
+ * returns 0
+ */
+unsigned int words_prev(gplayback_word_list *word_list, unsigned int word_id) {
+  gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+  return entry.prev;
+}
+
+/*
+ * Returns the ID of the next word in the word list if it exists and is one
+ * the same line, else returns 0
+ */
+unsigned int words_nextl(gplayback_word_list *word_list, unsigned int word_id) {
+  gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+  if (entry.next != 0) {
+    gplayback_word_list_entry next = words_get_entry(word_list, entry.next);
+    if (next.item.line_idx == entry.item.line_idx) {
+      return next.item.word_id;
+    }
+  }
+  return 0;
+}
+
+/*
+ * Returns the ID of the previous word in the word list if it exists and is one
+ * the same line, else returns 0
+ */
+unsigned int words_prevl(gplayback_word_list *word_list, unsigned int word_id) {
+  gplayback_word_list_entry word = words_get_entry(word_list, word_id);
+  if (word.prev != 0) {
+    gplayback_word_list_entry prev = words_get_entry(word_list, word.prev);
+    if (prev.item.line_idx == word.item.line_idx) {
+      return prev.item.word_id;
+    }
+  }
+
+  return 0;
+}
+
+/*
+ * Returns the ID of the next word in the word list if it exists and is one
+ * the same line, else returns the current word ID
+ */
+unsigned int words_nextlt(gplayback_word_list *word_list,
+                          unsigned int word_id) {
+  unsigned int next_word_id = words_nextl(word_list, word_id);
+  if (next_word_id != 0) {
+    return next_word_id;
+  }
+  return word_id;
+}
+
+/*
+ * Returns the ID of the previous word in the word list if it exists and is one
+ * the same line, else returns the current word ID
+ */
+unsigned int words_prevlt(gplayback_word_list *word_list,
+                          unsigned int word_id) {
+  unsigned int prev_word_id = words_prevl(word_list, word_id);
+  if (prev_word_id != 0) {
+    return prev_word_id;
+  }
+  return word_id;
+}
+
+unsigned int words_last(gplayback_word_list *word_list) {
+  unsigned int word_id = word_list->first;
+  unsigned int next = word_id;
+  while ((next = words_next(word_list, next)) != 0) {
+    word_id = next;
+  }
+  return word_id;
+}
+
+unsigned int words_bol(gplayback_word_list *word_list, unsigned int word_id) {
+  assert(word_id != 0, "Can not find BOL based on zero word");
+  unsigned int cursor = word_id;
+  while (cursor != 0) {
+    word_id = cursor;
+    cursor = words_prevl(word_list, cursor);
+  }
+  return word_id;
+}
+
+unsigned int words_eol(gplayback_word_list *word_list, unsigned int word_id) {
+  assert(word_id != 0, "Can not find EOL based on zero word");
+  unsigned int cursor = word_id;
+  while (cursor != 0) {
+    word_id = cursor;
+    cursor = words_nextl(word_list, cursor);
+  }
+  return word_id;
+}
+
+/*
+ * Returns the number of characters on the same line as word
+ */
+unsigned int words_line_charlen(gplayback_word_list *word_list,
+                                unsigned int word_id) {
+  word_id = words_bol(word_list, word_id);
+  unsigned int char_len = 0;
   do {
-    if (start->item.match != NULL) {
+    gplayback_word_list_entry word = words_get_entry(word_list, word_id);
+    char_len += word.item.len;
+  } while ((word_id = words_nextl(word_list, word_id)) != 0);
+  return char_len;
+}
+
+/*
+ * Returns the number of words on the same line as word
+ */
+unsigned int words_line_wordlen(gplayback_word_list *word_list,
+                                unsigned int word_id) {
+  word_id = words_bol(word_list, word_id);
+  int word_len = 0;
+  do {
+    word_len++;
+  } while ((word_id = words_nextl(word_list, word_id)) != 0);
+  return word_len;
+}
+
+/*
+ * Allocates a string containing a debug representation of the word list
+ */
+char *words_allocprint_word_list(const char *label,
+                                 gplayback_word_list *word_list,
+                                 gplayback_word_list *match_list) {
+  gplayback_writestr_state ws = writestr_create(512);
+
+  unsigned int cursor = word_list->first;
+
+  if (cursor == 0) {
+    return ws.out;
+  }
+
+  do {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    gplayback_word word = entry.item;
+
+    if (word.match == 0) {
+      writestr(ws, "[UNMATCHED]");
+    }
+
+    char escaped_word_buf[DEBUG_WORD_LIST_ESCAPEDCHARBUFLEN] = {0};
+    int escaped_len =
+        escape_fmt(escaped_word_buf, DEBUG_WORD_LIST_ESCAPEDCHARBUFLEN, "%.*s",
+                   (int)word.len, word.ptr);
+
+    writestr(ws, "[%.*s] word: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+             (int)strlen(label), label, word.line_idx, word.col_idx, word.len,
+             word.word_id, escaped_len, escaped_word_buf);
+
+    if (word.match != 0) {
+      gplayback_word_list_entry match_word =
+          words_get_entry(match_list, word.match);
+      char escaped_word_buf[DEBUG_WORD_LIST_ESCAPEDCHARBUFLEN] = {0};
+      int escaped_len =
+          escape_fmt(escaped_word_buf, DEBUG_WORD_LIST_ESCAPEDCHARBUFLEN,
+                     "%.*s", (int)match_word.item.len, match_word.item.ptr);
+      writestr(
+          ws, "   -> matched with: (line %d, col %d, len %d, id %d) \"%.*s\"\n",
+          match_word.item.line_idx, match_word.item.col_idx,
+          match_word.item.len, match_word.item.word_id, escaped_len,
+          escaped_word_buf);
+    }
+  } while ((cursor = words_next(word_list, cursor)) != 0);
+
+  return ws.out;
+}
+
+bool words_line_has_matches(gplayback_word_list *word_list,
+                            unsigned int word_id) {
+  unsigned int cursor = word_id;
+  do {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    if (entry.item.match != 0) {
       return true;
     }
-  } while ((start = start->next) != NULL && start->item.line_idx == line_idx);
+  } while ((cursor = words_nextl(word_list, cursor)) != 0);
   return false;
 }
 
-bool is_word_visited(gplayback_flags visited, gplayback_word_list_entry word) {
-  return visited.items[word.item.word_id];
-}
-
-bool is_whitespace(char c) {
+bool words_char_is_whitespace(char c) {
   return c == GPLAYBACK_TOKEN_SPACE || c == GPLAYBACK_TOKEN_TAB;
 }
 
-bool is_whitespace_or_newline(char c) {
-  return is_whitespace(c) || c == GPLAYBACK_TOKEN_NEWLINE;
+bool words_char_is_whitespace_or_newline(char c) {
+  return words_char_is_whitespace(c) || c == GPLAYBACK_TOKEN_NEWLINE;
 }
 
-void mark_word_visited(gplayback_flags *visited,
-                       gplayback_word_list_entry *word, bool visited_state) {
-  da_replace((*visited), word->item.word_id, visited_state);
+bool words_char_is_newline(char c) { return c == GPLAYBACK_TOKEN_NEWLINE; }
+
+bool words_is_linesep(gplayback_word word) {
+  return word.len == 1 && word.ptr[0] == GPLAYBACK_TOKEN_NEWLINE;
 }
 
-void mark_words_visited_until_eol(gplayback_flags *visited,
-                                  gplayback_word_list_entry *word,
-                                  bool visited_state) {
-  assert(word != NULL, "Can not mark words until EOL from NULL word");
-  do {
-    mark_word_visited(visited, word, visited_state);
-  } while ((word = word->next) != NULL &&
-           word->item.line_idx == word->prev->item.line_idx);
-}
+/*
+ * Moves a single word to a new position in the word list. If append_mode is
+ * true, the word is appended after the word designated by dest_before,
+ * otherwise it is inserted before it. Does not automatically trigger a
+ * recalculation of line numbers, so always call words_recalc_line_numbers()
+ * after running this function.
+ */
+void words_move(gplayback_word_list *word_list, unsigned int word_id,
+                unsigned int dest_before, bool append_mode) {
+  gplayback_word_list_entry *entry =
+      words_get_entry_pointer(word_list, word_id);
+  gplayback_word_list_entry *dest =
+      words_get_entry_pointer(word_list, dest_before);
 
-void move_words_until_eol(gplayback_word_list_entry *src,
-                          gplayback_word_list_entry *dest, bool append_mode) {
-  assert(src != NULL, "Can not move words from NULL word");
-  assert(dest != NULL, "Can not move words to NULL word");
-
-  int line_idx = src->item.line_idx;
-
-  gplayback_word_list_entry_refs refs = {0};
-
-  do {
-    da_append(refs, src);
-  } while ((src = src->next) && src->item.line_idx == line_idx);
-
-  for (int i = 0; i < refs.count; i++) {
-    gplayback_word_list_entry *entry;
-
-    if (append_mode) {
-      entry = refs.items[i];
-    } else {
-      entry = refs.items[refs.count - i - 1];
-    }
-
-    gplayback_word_list_entry *next = entry->next;
-    gplayback_word_list_entry *prev = entry->prev;
-
-    // Glue next and prev together at current position
-    if (next != NULL) {
-      next->prev = prev;
-    }
-    if (prev != NULL) {
-      prev->next = next;
-    }
-
-    if (append_mode) {
-      // Append case
-      entry->prev = dest;
-      entry->next = dest->next;
-      if (dest->next != NULL) {
-        dest->next->prev = entry;
-      }
-      dest->next = entry;
-      dest = entry;
-    } else {
-      // Insert case
-      entry->prev = dest->prev;
-      if (dest->prev != NULL) {
-        dest->prev->next = entry;
-      }
-      entry->next = dest;
-      dest->prev = entry;
-      dest = entry;
-    }
-  }
-
-  free(refs.items);
-}
-
-void approach_by_one(int *number, int target) {
-  if (*number > target) {
-    *number -= 1;
-  } else if (target > *number) {
-    *number += 1;
-  }
-}
-
-bool has_next_it(int number, int target, int mod) {
-  if (target >= 0) {
-    return number < (target + mod);
-  }
-  return number > (target - mod);
-}
-
-gplayback_word_list_entry *iterate_word(gplayback_word_list_entry *word,
-                                        int direction) {
-  if (direction >= 0) {
-    return word->next;
-  }
-  return word->prev;
-}
-
-void move_words_absolute_until_eol(gplayback_word_list_entry *src,
-                                   int move_amount) {
-  assert(src != NULL, "Moving words from NULL word not allowed");
-
-  bool append_mode = true;
-  gplayback_word_list_entry *dest = src;
-
-  int direction;
-  if (move_amount > 0) {
-    direction = 1;
-    append_mode = true;
-    move_amount += 1;
+  if (entry->prev != 0) {
+    gplayback_word_list_entry *prev =
+        words_get_entry_pointer(word_list, entry->prev);
+    prev->next = entry->next;
   } else {
-    direction = -1;
-    append_mode = false;
-    move_amount -= 1;
+    word_list->first = entry->next;
   }
 
-  for (int i = 0; has_next_it(i, move_amount, 0);
-       approach_by_one(&i, move_amount)) {
-    int line_idx = dest->item.line_idx;
+  if (entry->next != 0) {
+    gplayback_word_list_entry *next =
+        words_get_entry_pointer(word_list, entry->next);
+    next->prev = entry->prev;
+  }
+
+  if (append_mode) {
+    entry->prev = dest_before;
+    entry->next = dest->next;
+    if (dest->next != 0) {
+      gplayback_word_list_entry *next =
+          words_get_entry_pointer(word_list, dest->next);
+      next->prev = word_id;
+    }
+    dest->next = word_id;
+  } else {
+    entry->prev = dest->prev;
+    if (dest->prev != 0) {
+      gplayback_word_list_entry *prev =
+          words_get_entry_pointer(word_list, dest->prev);
+      prev->next = word_id;
+    }
+    entry->next = dest_before;
+    dest->prev = word_id;
+  }
+}
+
+/*
+ * Moves the line containing word id to a position designated by dest_before.
+ * If append_mode is ture, the line is appended after the word designated by
+ * dest_before, otherwise it is inserted before it. Does not automatically
+ * trigger a recalculation of line numbers, so always call
+ * words_recalc_line_numbers() after running this function.
+ */
+void words_move_line(gplayback_word_list *word_list, unsigned int word_id,
+                     unsigned int dest_before, bool append_mode) {
+  if (append_mode) {
+    unsigned int cursor = words_eol(word_list, word_id);
 
     do {
-      gplayback_word_list_entry *following = iterate_word(dest, direction);
-      if (following == NULL) {
-        goto outer;
-      } else if (following->item.line_idx != line_idx) {
-        break;
-      }
-      dest = following;
-    } while (1);
+      words_move(word_list, cursor, dest_before, append_mode);
+    } while ((cursor = words_prevl(word_list, cursor)) != 0);
 
-    if (has_next_it(i, move_amount, -1)) {
-      dest = iterate_word(dest, direction);
-      assert(dest != NULL, "Attempted to move past boundaries of word list");
-    }
+  } else {
+    unsigned int cursor = words_bol(word_list, word_id);
+
+    do {
+      words_move(word_list, cursor, dest_before, append_mode);
+    } while ((cursor = words_nextl(word_list, cursor)) != 0);
   }
-outer:
-
-  return move_words_until_eol(src, dest, append_mode);
 }
 
-void modify_words_colnum_until_eol(gplayback_word_list_entry *word,
-                                   int amount) {
-  if (word == NULL) {
-    dbg_log("Warning: Trying to modify column number of NULL word, this has no "
-            "effect\n");
-    return;
+/*
+ * Moves the line containing word_id by move_amount lines. Does not
+ * automatically trigger a recalculation of line numbers, so always call
+ * words_recalc_line_numbers() after running this function.
+ */
+void words_move_line_absolute(gplayback_word_list *word_list,
+                              unsigned int word_id, int move_amount) {
+  assert(move_amount != 0, "Move amount must be a non-zero integer");
+  gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+  unsigned int target_line =
+      words_find_line(word_list, entry.item.line_idx + move_amount);
+
+  if (target_line == 0) {
+    words_move_line(word_list, word_id, words_last(word_list), true);
+  } else if (move_amount > 0) {
+    words_move_line(word_list, word_id, words_eol(word_list, target_line),
+                    true);
+  } else {
+    words_move_line(word_list, word_id, target_line, false);
   }
+}
+
+void words_recalc_line_numbers(gplayback_word_list *word_list) {
+  unsigned int cursor = word_list->first;
+  unsigned int line_idx = 0;
   do {
-    word->item.col_idx += amount;
-  } while (word->next != NULL &&
-           word->item.line_idx == word->next->item.line_idx &&
-           (word = word->next));
-}
-
-void modify_words_linenum(gplayback_word_list_entry *entry, int limit,
-                          int modify_amount) {
-  assert(entry != NULL, "Can not modify line number of NULL word");
-  int line_idx = entry->item.line_idx;
-
-  /*
-   * Bar
-   * bie
-   * doll
-   * xxx
-   * yyy
-   * zzz
-   */
-
-  do {
-    if (limit != -1 && entry->item.line_idx != line_idx) {
-      if (--limit <= 0) {
-        break;
-      }
-      line_idx = entry->item.line_idx;
+    gplayback_word_list_entry *entry =
+        words_get_entry_pointer(word_list, cursor);
+    entry->item.line_idx = line_idx;
+    if (entry->item.len == 1 && entry->item.ptr[0] == '\n') {
+      line_idx++;
     }
-
-    entry->item.line_idx += modify_amount;
-  } while ((entry = entry->next));
+  } while ((cursor = words_next(word_list, cursor)) != 0);
 }
 
-void modify_words_linenum_backwards(gplayback_word_list_entry *start, int limit,
-                                    int modify_amount) {
-  if (start == NULL) {
-    dbg_log("Warning: Trying to modify line number of NULL word, this has no "
-            "effect\n");
-    return;
-  }
-  while (limit == -1 || (limit--) > 0) {
-    start->item.line_idx += modify_amount;
-
-    if (start->prev == NULL) {
-      break;
-    }
-
-    start = start->prev;
-  }
-}
-
-void modify_words_linenum_until_eol(gplayback_word_list_entry *word,
-                                    int amount) {
-  if (word == NULL) {
-    dbg_log("Warning: Trying to modify line number of NULL word, this has no "
-            "effect\n");
-    return;
-  }
-  int line_idx;
+void words_recalc_col_numbers(gplayback_word_list *word_list,
+                              unsigned int word_id) {
+  unsigned int cursor = words_bol(word_list, word_id);
+  unsigned int col_idx = 0;
   do {
-    line_idx = word->item.line_idx;
-    word->item.line_idx += amount;
-  } while (word->next != NULL && line_idx == word->next->item.line_idx &&
-           (word = word->next));
+    gplayback_word_list_entry *entry =
+        words_get_entry_pointer(word_list, cursor);
+    entry->item.col_idx = col_idx;
+    col_idx += entry->item.len;
+  } while ((cursor = words_nextl(word_list, cursor)) != 0);
+}
+
+void words_recalc_col_numbers_by_line_idx(gplayback_word_list *word_list,
+                                          unsigned int line_idx) {
+  unsigned int word_id = words_find_line(word_list, line_idx);
+  return words_recalc_col_numbers(word_list, word_id);
 }
 
 char word_matchchr(char chr) {
-  if (chr == GPLAYBACK_TOKEN_SPACE || chr == GPLAYBACK_TOKEN_TAB ||
-      chr == GPLAYBACK_TOKEN_NEWLINE) {
+  if (words_char_is_whitespace_or_newline(chr)) {
     return GPLAYBACK_TOKEN_SPACE;
   }
   return chr;
 }
 
-gplayback_word_list word_list(gplayback_slice text) {
+gplayback_word_list words_create_list(gplayback_slice text) {
   gplayback_word_list word_list = {0};
+  word_list.entries.head = 1;
+  memset(word_list.entries.items, 0, sizeof(word_list.entries.items));
+
   gplayback_word_list_entry *last_entry = NULL;
   int line_idx = 0;
   int col_idx = 0;
-  int word_id = 0;
-  const char *cursor = NULL;
+  const char *cursor = text.ptr;
 
   char lastchar = GPLAYBACK_TOKEN_NEVER;
 
   for (size_t i = 0; i < text.len; i++) {
-    if (i == 0 || ((!is_whitespace(text.ptr[i]) && is_whitespace(lastchar)) ||
-                   lastchar == GPLAYBACK_TOKEN_NEWLINE)) {
+    if ((!words_char_is_whitespace(text.ptr[i]) &&
+         words_char_is_whitespace(lastchar)) ||
+        lastchar == GPLAYBACK_TOKEN_NEWLINE ||
+        text.ptr[i] == GPLAYBACK_TOKEN_NEWLINE) {
 
-      // Commit existing word and begin new one
-      if (cursor != NULL) {
-        append_wordlist_word(cursor, text.ptr + i - cursor, line_idx, col_idx,
-                             word_id++, last_entry, word_list);
+      if (i > 0) {
+        // Commit existing word and begin new one
+        unsigned int word_len = text.ptr + i - cursor;
+        gplayback_word word = {.match = 0,
+                               .line_idx = line_idx,
+                               .col_idx = col_idx - word_len,
+                               .len = word_len,
+                               .ptr = cursor};
+        unsigned int word_id = words_append(&word_list, word, last_entry);
+        last_entry = words_get_entry_pointer(&word_list, word_id);
       }
 
       cursor = text.ptr + i;
@@ -522,16 +570,20 @@ gplayback_word_list word_list(gplayback_slice text) {
     lastchar = text.ptr[i];
   }
 
-  if (cursor != NULL) {
-    append_wordlist_word(cursor, text.ptr + text.len - cursor, line_idx,
-                         col_idx, word_id, last_entry, word_list);
-  }
+  unsigned int word_len = text.ptr + text.len - cursor;
+  gplayback_word word = {.match = 0,
+                         .line_idx = line_idx,
+                         col_idx - word_len,
+                         .len = word_len,
+                         .ptr = cursor};
+  unsigned int word_id = words_append(&word_list, word, last_entry);
+  last_entry = words_get_entry_pointer(&word_list, word_id);
 
   return word_list;
 }
 
-int word_subset_of_word(gplayback_word haystack, gplayback_word needle,
-                        bool strict) {
+int words_find_in_word(gplayback_word haystack, gplayback_word needle,
+                       bool strict) {
   if (needle.len > haystack.len) {
     return -1;
   }
@@ -558,4 +610,152 @@ int word_subset_of_word(gplayback_word haystack, gplayback_word needle,
   }
 
   return -1;
+}
+
+void words_transfer_slice(gplayback_word_list *word_list,
+                          gplayback_slice from_slice,
+                          gplayback_slice to_slice) {
+  unsigned int cursor = word_list->first;
+  if (from_slice.ptr == to_slice.ptr && from_slice.len == to_slice.len) {
+    dbg_log("Slices are identical, no need to transfer");
+    return;
+  }
+  while (cursor != 0) {
+    gplayback_word_list_entry *entry =
+        words_get_entry_pointer(word_list, cursor);
+    entry->item.ptr = to_slice.ptr + (entry->item.ptr - from_slice.ptr);
+    cursor = entry->next;
+  }
+}
+
+unsigned int words_find_anchors(gplayback_word_list *word_list,
+                                unsigned int *out) {
+  unsigned int cursor = word_list->first;
+  unsigned int offset = 0;
+
+  while (cursor != 0) {
+    out[offset++] = cursor;
+    cursor = words_next(word_list, words_eol(word_list, cursor));
+  }
+
+  return offset;
+}
+
+unsigned int words_first(gplayback_word_list *word_list) {
+  for (int i = 1; i < word_list->entries.head; i++) {
+    if (word_list->entries.items[i].item.word_id != 0 &&
+        word_list->entries.items[i].prev == 0) {
+      return i;
+    }
+  }
+  return 0;
+}
+
+void words_recalc_first(gplayback_word_list *word_list) {
+  word_list->first = words_first(word_list);
+}
+
+unsigned int words_print_word(char *out, unsigned int out_len,
+                              gplayback_word_list *word_list,
+                              unsigned int word_id) {
+  unsigned int offset = 0;
+  gplayback_word_list_entry entry = words_get_entry(word_list, word_id);
+  for (int i = 0; i < entry.item.len; i++) {
+    assert(offset < out_len, "Buffer overflow");
+    out[offset++] = entry.item.ptr[i];
+  }
+  assert(offset < out_len, "Buffer overflow");
+  out[offset++] = '\0';
+  return offset;
+}
+
+unsigned int words_print_wordlist(char *out, unsigned int out_len,
+                                  gplayback_word_list *word_list) {
+  unsigned int cursor = word_list->first;
+  unsigned int offset = 0;
+  while (cursor != 0) {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    for (int i = 0; i < entry.item.len; i++) {
+      assert(offset < out_len, "Buffer overflow");
+      out[offset++] = entry.item.ptr[i];
+    }
+    cursor = words_next(word_list, cursor);
+  }
+  assert(offset < out_len, "Buffer overflow");
+  out[offset++] = '\0';
+  return offset;
+}
+
+unsigned int words_print_line(char *out, unsigned int out_len,
+                              gplayback_word_list *word_list,
+                              unsigned int word_id) {
+  unsigned int cursor = words_bol(word_list, word_id);
+  unsigned int offset = 0;
+  while (cursor != 0) {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    for (int i = 0; i < entry.item.len; i++) {
+      assert(offset < out_len, "Buffer overflow");
+      out[offset++] = entry.item.ptr[i];
+    }
+    cursor = words_nextl(word_list, cursor);
+  }
+  assert(offset < out_len, "Buffer overflow");
+  out[offset++] = '\0';
+  return offset;
+}
+
+unsigned int words_print_line_with_highlights(char *out, unsigned int out_len,
+                                              gplayback_word_list *word_list,
+                                              unsigned int *word_ids,
+                                              unsigned int word_ids_len,
+                                              const char *normal_color,
+                                              const char *highlight_color) {
+  assert(word_ids_len > 0,
+         "Can't print highlighted line with zero highlighted word IDs");
+  unsigned int start_id = word_ids[0];
+  assert(start_id != 0, "Can't print highlighted line with zero start word ID");
+  unsigned int cursor = words_bol(word_list, word_ids[0]);
+  unsigned int offset = 0;
+
+  while (cursor != 0) {
+    gplayback_word_list_entry entry = words_get_entry(word_list, cursor);
+    bool highlight = false;
+    for (int i = 0; i < word_ids_len; i++) {
+      if (cursor == word_ids[i]) {
+        highlight = true;
+        break;
+      }
+    }
+
+    if (highlight) {
+      assert(offset < out_len, "Buffer overflow");
+      offset += snprintf(out + offset, out_len - offset, "%.*s",
+                         (int)strlen(highlight_color), highlight_color);
+    }
+
+    offset += snprintf(out + offset, out_len - offset, "%.*s", entry.item.len,
+                       entry.item.ptr);
+
+    if (highlight) {
+      assert(offset < out_len, "Buffer overflow");
+      offset += snprintf(out + offset, out_len - offset, "%.*s",
+                         (int)strlen(normal_color), normal_color);
+    }
+
+    cursor = words_nextl(word_list, cursor);
+  }
+  assert(offset < out_len, "Buffer overflow");
+  out[offset++] = '\0';
+  return offset;
+}
+
+unsigned int words_span_count(gplayback_word_list *word_list,
+                              unsigned int first, unsigned int last) {
+  unsigned int cursor = first;
+  unsigned int count = 0;
+  while (cursor != 0) {
+    count++;
+    cursor = cursor == last ? 0 : words_next(word_list, cursor);
+  }
+  return count;
 }

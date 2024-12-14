@@ -8,32 +8,18 @@ typedef struct {
 } gplayback_slice;
 
 typedef struct {
-  gplayback_slice *slice;
-  int start;
-  int len;
-} gplayback_segment;
-
-typedef struct {
   gplayback_slice *items;
   size_t count;
   size_t capacity;
 } gplayback_slices;
 
-typedef struct {
-  gplayback_segment *items;
-  size_t count;
-  size_t capacity;
-} gplayback_segments;
-
-gplayback_segment subsegment(gplayback_segment segment, int start, int len);
-const char *segmentptr(gplayback_segment segment);
-gplayback_slice strslice(const char *ptr);
-gplayback_slice subslice(char *ptr, int offset, int len);
 char *slice_to_buf(gplayback_slice slice);
-void free_slice_buf(gplayback_slice slice);
-gplayback_slice copy_slice(gplayback_slice slice);
+gplayback_slice slice_copy(gplayback_slice slice);
+gplayback_slice slice_from_buf(const char *ptr);
+gplayback_slice slice_subslice(const char *ptr, int offset, int len);
+void slice_free_buf(gplayback_slice slice);
 
-#define slicecmp(a, b, c)                                                      \
+#define slice_cmp(a, b, c)                                                     \
   do {                                                                         \
     if (a.len != b.len) {                                                      \
       *c = false;                                                              \

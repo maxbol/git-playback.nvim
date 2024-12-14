@@ -2,7 +2,7 @@
 #define PATCH_H
 
 #include "diff.h"
-#include "segments.h"
+#include "slice.h"
 #include "words.h"
 
 typedef struct {
@@ -53,7 +53,15 @@ typedef struct {
 } gplayback_vm_op_move_rows;
 
 typedef struct {
+  size_t char_len;
+} gplayback_vm_op_cut_words;
+
+typedef struct {
   gplayback_vm_operation_entry *first;
+  // Mutated diff, owned by the patch object. Once the patch is generated, this
+  // will contain all changed made to the LHS side and should perfectly reflect
+  // the RHS.
+  gplayback_diff diff;
 } gplayback_patch;
 
 typedef struct {
@@ -67,9 +75,9 @@ typedef struct {
   int move_amount;
 } moveset;
 
-char *debug_patch(gplayback_patch patch);
-void free_operation_entry(gplayback_vm_operation_entry *entry);
-void free_patch(gplayback_patch patch);
-gplayback_patch generate_patch(gplayback_diff *diff);
+char *patch_debug(gplayback_patch *patch);
+void patch_free_operation_entries(gplayback_vm_operation_entry *entry);
+void patch_free(gplayback_patch *patch);
+gplayback_patch patch_generate(gplayback_diff *diff);
 
 #endif // !PATCH_H

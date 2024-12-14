@@ -22,20 +22,44 @@ typedef struct {
 
 typedef struct {
   gplayback_word_list words;
-  gplayback_lines lines;
+  /*gplayback_lines lines;*/
   gplayback_slice slice;
 } gplayback_text;
 
 typedef struct {
+  unsigned int moveword_min_word_amount;
+  float moveline_entropy_treshold;
+} gplayback_generate_diff_opts;
+
+typedef struct {
+  unsigned int lhs_anchor;
+  unsigned int lines_amount;
+} gplayback_diff_moveline;
+
+typedef struct {
+  unsigned int lhs_start;
+  unsigned int words_amount;
+} gplayback_diff_movewords;
+
+typedef struct {
   gplayback_text lhs;
   gplayback_text rhs;
+  gplayback_diff_moveline movelines[WORD_MAX_MOVELINES];
+  gplayback_diff_movewords movewords[WORD_MAX_MOVEWORDS];
 } gplayback_diff;
 
-char *debug_diff(gplayback_diff diff);
-void free_diff(gplayback_diff diff);
-gplayback_lines lines(gplayback_word_list word_list);
-bool lines_identical(gplayback_line *a, gplayback_line *b);
-void match_lines(gplayback_text *outer, gplayback_text *inner);
-gplayback_diff generate_diff(gplayback_slice lhs, gplayback_slice rhs);
+typedef struct {
+  unsigned int from;
+  unsigned int to;
+  unsigned int target;
+} gplayback_diff_word_process_span;
+
+gplayback_text diff_clone_text(gplayback_text text);
+gplayback_diff diff_clone(gplayback_diff *diff);
+char *diff_debug(gplayback_diff *diff);
+void diff_free(gplayback_diff *diff);
+void diff_match_words(gplayback_text *outer, gplayback_text *inner);
+gplayback_diff diff_generate(gplayback_slice lhs, gplayback_slice rhs,
+                             gplayback_generate_diff_opts opts);
 
 #endif // !DIFF_H

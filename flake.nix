@@ -35,6 +35,9 @@
           ];
           packages = with pkgs; [
             clang-tools
+            llvm_17
+            lldb_17
+            bear
           ];
         };
       }

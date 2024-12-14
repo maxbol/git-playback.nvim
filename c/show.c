@@ -4,14 +4,14 @@
 #include <unistd.h>
 
 #include "assert.h"
-#include "segments.h"
+#include "slice.h"
 
 #define REPO ".git"
 #define GIT_SUCCESS 0
 
 gplayback_slice show_file_at_path(const char *file_path) {
   if (access(file_path, F_OK) == -1) {
-    return strslice("");
+    return slice_from_buf("");
   }
 
   FILE *file = fopen(file_path, "r");
@@ -24,7 +24,7 @@ gplayback_slice show_file_at_path(const char *file_path) {
   memset(txt_ptr, 0, file_size + 1);
   fread(txt_ptr, file_size, 1, file);
 
-  gplayback_slice txt = strslice(txt_ptr);
+  gplayback_slice txt = slice_from_buf(txt_ptr);
 
   fclose(file);
 
@@ -59,7 +59,7 @@ gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
   } else if (git_object_type(obj) == GIT_OBJ_TREE) {
     tree = (git_tree *)obj;
   } else {
-    error("Object is not a commit or tree\n");
+    error("Object is not a commit or tree");
   }
 
   // Get the tree entry
@@ -71,7 +71,7 @@ gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
     git_commit_free(commit);
     git_repository_free(repo);
 
-    return strslice("");
+    return slice_from_buf("");
   }
   assert(success == GIT_SUCCESS, "Could not get tree entry: %s",
          git_error_last()->message);
@@ -87,7 +87,7 @@ gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
   char *txt_ptr = malloc(sizeof(char) * (blob_raw_size + 1));
   memset(txt_ptr, 0, blob_raw_size + 1);
   strncpy(txt_ptr, git_blob_rawcontent(blob), blob_raw_size);
-  gplayback_slice txt = strslice(txt_ptr);
+  gplayback_slice txt = slice_from_buf(txt_ptr);
 
   // Cleanup
   git_object_free(obj);
