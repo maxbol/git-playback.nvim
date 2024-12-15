@@ -239,6 +239,14 @@ char *patch_debug(gplayback_patch *patch) {
       writestr(ws, " >> Split rows\n");
       break;
     }
+    case GPLAYBACK_OP_CUT_WORDS: {
+      writestr(ws, " >> Cut words\n");
+      break;
+    }
+    case GPLAYBACK_OP_PASTE_WORDS: {
+      writestr(ws, " >> Paste words\n");
+      break;
+    }
     }
     writestr(ws, " + Cursor: %d:%d\n\n", entry->item.cursor.line,
              entry->item.cursor.column);
@@ -260,8 +268,9 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
     gplayback_word_list_entry rhs_entry =
         words_get_entry(rhs_words, *rhs_word_cursor);
 
-    dbg_log("Catching up RHS word: %.*s", (int)rhs_entry.item.len,
-            rhs_entry.item.ptr);
+    dbg_log("Catching up RHS word %d: %.*s (current LHS cursor %d)",
+            rhs_entry.item.word_id, (int)rhs_entry.item.len, rhs_entry.item.ptr,
+            *lhs_word_cursor);
 
     gplayback_diff_moveline moveline = diff->movelines[*rhs_word_cursor];
     if (moveline.lhs_anchor != 0) {
@@ -298,10 +307,9 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
       words_recalc_line_numbers(lhs_words);
 
       *lhs_word_cursor = moveline.lhs_anchor;
-      break;
     }
 
-    gplayback_diff_movewords movewords = diff->movewords[(*rhs_word_cursor)];
+    gplayback_diff_movewords movewords = diff->movewords[*rhs_word_cursor];
     if (movewords.lhs_start != 0) {
       unsigned int cursor = movewords.lhs_start;
       unsigned int i = movewords.words_amount;
@@ -313,10 +321,12 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
       unsigned int char_len = 0;
 
       while (cursor != 0 && i-- > 0) {
-        gplayback_word_list_entry entry = words_get_entry(lhs_words, cursor);
-        char_len += entry.item.len;
+        if (cursor != *lhs_word_cursor) {
+          gplayback_word_list_entry entry = words_get_entry(lhs_words, cursor);
+          char_len += entry.item.len;
 
-        words_move(lhs_words, cursor, *lhs_word_cursor, false);
+          words_move(lhs_words, cursor, *lhs_word_cursor, false);
+        }
         cursor = words_next(lhs_words, cursor);
       }
 
@@ -355,7 +365,6 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
                                            NULL, cursorpos);
 
       *lhs_word_cursor = movewords.lhs_start;
-      break;
     }
 
     if (rhs_entry.item.match != 0) {
@@ -491,12 +500,14 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
               words_print_word(word_dump, 1024, rhs_words, *rhs_word_cursor);
           dbg_log("@@@ Appending word %d: %.*s", *rhs_word_cursor, word_len,
                   word_dump);
-          char words_dump[8192];
-          unsigned int words_len =
-              words_print_wordlist(words_dump, 8192, lhs_words);
-          dbg_log("Text before:");
+          char words_dump[WORD_LINE_MAX_LEN];
+          unsigned int words_len = words_print_line(
+              words_dump, WORD_LINE_MAX_LEN, lhs_words, *lhs_word_cursor);
+
+          dbg_log("Line before:");
           dbg_log("%.*s", words_len, words_dump);
         }
+
         gplayback_word word_copy = rhs_entry.item;
         word_copy.match = 0;
         *lhs_word_cursor = words_insert(lhs_words, word_copy, *lhs_word_cursor);
@@ -504,10 +515,12 @@ patch_catch_up_rhs(gplayback_diff *diff, unsigned int *lhs_word_cursor,
         words_recalc_col_numbers(lhs_words, *lhs_word_cursor);
 
         {
-          char words_dump[8192];
-          unsigned int words_len =
-              words_print_wordlist(words_dump, 8192, lhs_words);
-          dbg_log("Text after:");
+          char words_dump[WORD_LINE_MAX_LEN];
+          unsigned int words_len = words_print_line_with_highlights(
+              words_dump, WORD_LINE_MAX_LEN, lhs_words, lhs_word_cursor, 1,
+              "\e[0m", "\e[3;32m");
+
+          dbg_log("Line after:");
           dbg_log("%.*s", words_len, words_dump);
         }
 
@@ -662,22 +675,23 @@ gplayback_patch patch_generate(gplayback_diff *diff) {
     flags_set(&flags, lhs_word_cursor, FLAG_VISITED | FLAG_INSERT_PROCESSED,
               true);
 
+    dbg_log("rhs_word_cursor: %d", rhs_word_cursor);
+    if (rhs_word_cursor != 0) {
+      gplayback_word_list_entry rhs_entry =
+          words_get_entry(rhs_words, rhs_word_cursor);
+      dbg_log("rhs_word: <<%.*s>>", (int)rhs_entry.item.len,
+              rhs_entry.item.ptr);
+
+      if (rhs_entry.item.match != 0) {
+        gplayback_word_list_entry rhs_match =
+            words_get_entry(lhs_words, rhs_entry.item.match);
+        dbg_log("rhs_word match: <<%.*s>>", (int)rhs_match.item.len,
+                rhs_match.item.ptr);
+      }
+    }
+
     last_lhs_word_cursor = lhs_word_cursor;
     lhs_word_cursor = words_next(lhs_words, lhs_word_cursor);
-  }
-
-  dbg_log("rhs_word_cursor: %d", rhs_word_cursor);
-  if (rhs_word_cursor != 0) {
-    gplayback_word_list_entry rhs_entry =
-        words_get_entry(rhs_words, rhs_word_cursor);
-    dbg_log("rhs_word: <<%.*s>>", (int)rhs_entry.item.len, rhs_entry.item.ptr);
-
-    if (rhs_entry.item.match != 0) {
-      gplayback_word_list_entry rhs_match =
-          words_get_entry(lhs_words, rhs_entry.item.match);
-      dbg_log("rhs_word match: <<%.*s>>", (int)rhs_match.item.len,
-              rhs_match.item.ptr);
-    }
   }
 
   if (dl.lines_amount > 0) {

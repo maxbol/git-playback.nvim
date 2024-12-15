@@ -390,7 +390,16 @@ bool words_char_is_whitespace_or_newline(char c) {
 bool words_char_is_newline(char c) { return c == GPLAYBACK_TOKEN_NEWLINE; }
 
 bool words_is_linesep(gplayback_word word) {
-  return word.len == 1 && word.ptr[0] == GPLAYBACK_TOKEN_NEWLINE;
+  return word.len == 1 && words_char_is_newline(word.ptr[0]);
+}
+
+bool words_is_whitespace(gplayback_word word) {
+  for (int i = 0; i < word.len; i++) {
+    if (!words_char_is_whitespace(word.ptr[i])) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /*
@@ -406,6 +415,8 @@ void words_move(gplayback_word_list *word_list, unsigned int word_id,
       words_get_entry_pointer(word_list, word_id);
   gplayback_word_list_entry *dest =
       words_get_entry_pointer(word_list, dest_before);
+
+  assert(word_id != dest_before, "Can't move word to itself");
 
   if (entry->prev != 0) {
     gplayback_word_list_entry *prev =
@@ -492,14 +503,17 @@ void words_move_line_absolute(gplayback_word_list *word_list,
 void words_recalc_line_numbers(gplayback_word_list *word_list) {
   unsigned int cursor = word_list->first;
   unsigned int line_idx = 0;
-  do {
+
+  while (cursor != 0) {
     gplayback_word_list_entry *entry =
         words_get_entry_pointer(word_list, cursor);
     entry->item.line_idx = line_idx;
     if (entry->item.len == 1 && entry->item.ptr[0] == '\n') {
       line_idx++;
     }
-  } while ((cursor = words_next(word_list, cursor)) != 0);
+
+    cursor = words_next(word_list, cursor);
+  }
 }
 
 void words_recalc_col_numbers(gplayback_word_list *word_list,

@@ -128,6 +128,7 @@ void words_recalc_line_numbers(gplayback_word_list *word_list);
 void words_recalc_col_numbers(gplayback_word_list *word_list,
                               unsigned int word_id);
 bool words_is_linesep(gplayback_word word);
+bool words_is_whitespace(gplayback_word word);
 unsigned int words_print_wordlist(char *out, unsigned int out_len,
                                   gplayback_word_list *word_list);
 unsigned int words_print_line(char *out, unsigned int out_len,
