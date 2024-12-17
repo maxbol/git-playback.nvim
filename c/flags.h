@@ -7,8 +7,8 @@
 #include "assert.h"
 #include "words.h"
 
-#define FLAG_VISITED 1 << 0
-#define FLAG_INSERT_PROCESSED 1 << 1
+#define FLAG_VISITED (1 << 0)
+#define FLAG_INSERT_PROCESSED (1 << 1)
 
 typedef unsigned int gplayback_flags;
 typedef gplayback_flags gplayback_flagset[WORD_LINE_MAX_LEN];

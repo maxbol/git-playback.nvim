@@ -19,7 +19,7 @@ char *diff_debug(gplayback_diff *diff) {
   gplayback_writestr_state ws = writestr_create(512);
 
   writestr(ws, "Movelines:\n");
-  unsigned int cursor = rhs_words->first;
+  gplayback_word_id cursor = rhs_words->first;
   while (cursor != 0) {
     gplayback_diff_moveline moveline = diff->movelines[cursor];
 
@@ -78,9 +78,9 @@ char *diff_debug(gplayback_diff *diff) {
         words_get_entry(lhs_words, movewords.lhs_start);
 
     writestr(ws, "\t- Moving %d words...\n", movewords.words_amount);
-    unsigned int move_word_ids[128] = {0};
+    gplayback_word_id move_word_ids[128] = {0};
 
-    unsigned int mv_cursor = movewords.lhs_start;
+    gplayback_word_id mv_cursor = movewords.lhs_start;
     unsigned int i = movewords.words_amount;
     while (mv_cursor != 0 && i-- > 0) {
       move_word_ids[i] = mv_cursor;
@@ -160,7 +160,7 @@ gplayback_diff diff_clone(gplayback_diff *diff) {
   clone.rhs = diff_clone_text(diff->rhs);
 
   // Clone movelines
-  unsigned int cursor = diff->rhs.words.first;
+  gplayback_word_id cursor = diff->rhs.words.first;
   while (cursor != 0) {
     clone.movelines[cursor] = diff->movelines[cursor];
     cursor = words_next(&diff->rhs.words, cursor);
@@ -204,7 +204,8 @@ gplayback_diff diff_clone(gplayback_diff *diff) {
 
 void diff_process_movewords(gplayback_word_list *lhs_words,
                             gplayback_word_list *rhs_words,
-                            unsigned int *anchors, unsigned int anchors_len,
+                            gplayback_word_id *anchors,
+                            unsigned int anchors_len,
                             gplayback_generate_diff_opts opts,
                             gplayback_diff_movewords *movewords,
                             gplayback_diff_moveline *movelines) {
@@ -213,14 +214,14 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
   gplayback_diff_moveline *current_moveline = NULL;
 
   for (int i = 0; i <= anchors_len; i++) {
-    unsigned int cursor = anchors[i];
+    gplayback_word_id cursor = anchors[i];
     unsigned int word_count = 0;
     unsigned int matched_count = 0;
 
-    unsigned int selection_start = 0;
+    gplayback_word_id selection_start = 0;
     unsigned int last_rhs_line = 0;
-    unsigned int last_cursor = 0;
-    unsigned int last_target = 0;
+    gplayback_word_id last_cursor = 0;
+    gplayback_word_id last_target = 0;
     bool is_single_rhs_linematch = true;
 
     gplayback_diff_word_process_span spans_to_process[4096] = {0};
@@ -230,6 +231,11 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
       gplayback_word_list_entry entry = words_get_entry(lhs_words, cursor);
       dbg_log("Processing word #%d: %.*s", entry.item.word_id, entry.item.len,
               entry.item.ptr);
+
+      if (words_is_linesep(entry.item)) {
+        cursor = words_nextl(lhs_words, cursor);
+        continue;
+      }
 
       word_count++;
 
@@ -265,17 +271,20 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
       }
 
       if (match_pos >= tail_rhs_pos) {
+
         dbg_log("Matches word that is on a line below ((%d)) current tail "
                 "((%d)) (greater or "
                 "equal line idx) - closing existing move spans, and "
                 "adding no new ones",
                 match_pos, tail_rhs_pos);
+
         if (selection_start != 0) {
           gplayback_diff_word_process_span span = {.from = selection_start,
                                                    .to = last_cursor,
                                                    .target = last_target};
           assert(spans_to_process_len < 4096, "Too many spans to process");
           spans_to_process[spans_to_process_len++] = span;
+
           dbg_log("\e[0;32mAdded span from %d to %d, target %d\e[0m", span.from,
                   span.to, span.target);
         }
@@ -297,14 +306,18 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
         selection_start = cursor;
         last_target = entry.item.match;
       } else if (last_rhs_line != 0 && last_rhs_line != match.item.line_idx) {
+
         dbg_log("Matches word that is on a different line than earlier matches "
                 "- closing existing move span, and adding a new one");
+
         gplayback_diff_word_process_span span = {
             .from = selection_start, .to = last_cursor, .target = last_target};
         assert(spans_to_process_len < 4096, "Too many spans to process");
         spans_to_process[spans_to_process_len++] = span;
+
         dbg_log("\e[0;32mAdded span from %d to %d, target %d\e[0m", span.from,
                 span.to, span.target);
+
         is_single_rhs_linematch = false;
         selection_start = cursor;
         last_target = entry.item.match;
@@ -319,26 +332,38 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
 
     if (last_target != 0 && is_single_rhs_linematch &&
         entropy <= opts.moveline_entropy_treshold) {
-      dbg_log("Treating as single line move operation");
-      if (current_moveline == NULL) {
-        current_moveline = &movelines[words_next(
-            rhs_words, words_eol(rhs_words, last_target))];
-        current_moveline->lhs_anchor = anchors[i];
-        current_moveline->lines_amount = 0;
+
+      gplayback_word_list_entry target_entry =
+          words_get_entry(rhs_words, last_target);
+      gplayback_word_list_entry anchor_entry =
+          words_get_entry(lhs_words, anchors[i]);
+
+      if (target_entry.item.line_idx != anchor_entry.item.line_idx) {
+        dbg_log("Treating as single line move operation");
+
+        if (current_moveline == NULL) {
+          current_moveline = &movelines[words_next(
+              rhs_words, words_eol(rhs_words, last_target))];
+          current_moveline->lhs_anchor = anchors[i];
+          current_moveline->lines_amount = 0;
+        }
+        current_moveline->lines_amount++;
+        continue;
       }
-      current_moveline->lines_amount++;
-      continue;
     }
     current_moveline = NULL;
 
     dbg_log("Treating as multi word move operation");
 
     if (selection_start != 0) {
+
       dbg_log("Closing last move span");
+
       gplayback_diff_word_process_span span = {
           .from = selection_start, .to = last_cursor, .target = last_target};
       assert(spans_to_process_len < 4096, "Too many spans to process");
       spans_to_process[spans_to_process_len++] = span;
+
       dbg_log("\e[0;32mAdded span from %d to %d, target %d\e[0m", span.from,
               span.to, span.target);
     }
@@ -380,8 +405,8 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
   char(*inner_line_char)[WORD_MAX_LINES] =
       malloc(sizeof(char[WORD_LINE_MAX_LEN][WORD_MAX_LINES]));
 
-  unsigned int outer_line_anchor[WORD_MAX_LINES];
-  unsigned int inner_line_anchor[WORD_MAX_LINES];
+  gplayback_word_id outer_line_anchor[WORD_MAX_LINES];
+  gplayback_word_id inner_line_anchor[WORD_MAX_LINES];
 
   unsigned int outer_line_size[WORD_MAX_LINES];
   unsigned int inner_line_size[WORD_MAX_LINES];
@@ -389,7 +414,7 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
   unsigned int outer_line_offset = 0;
   unsigned int inner_line_offset = 0;
 
-  unsigned int outer_cursor = outer_words->first;
+  gplayback_word_id outer_cursor = outer_words->first;
   while (outer_cursor != 0) {
     assert(outer_cursor < WORD_MAX_LINES, "Too many lines in outer text");
     outer_line_anchor[outer_line_offset] = outer_cursor;
@@ -401,7 +426,7 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
         words_next(outer_words, words_eol(outer_words, outer_cursor));
   }
 
-  unsigned int inner_cursor = inner_words->first;
+  gplayback_word_id inner_cursor = inner_words->first;
   while (inner_cursor != 0) {
     assert(inner_cursor < WORD_MAX_LINES, "Too many lines in inner text");
     inner_line_anchor[inner_line_offset] = inner_cursor;
@@ -426,8 +451,8 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
         continue;
       }
 
-      unsigned int outer_cursor = outer_line_anchor[i];
-      unsigned int inner_cursor = inner_line_anchor[j];
+      gplayback_word_id outer_cursor = outer_line_anchor[i];
+      gplayback_word_id inner_cursor = inner_line_anchor[j];
 
       while (outer_cursor != 0 && inner_cursor != 0) {
         gplayback_word_list_entry *outer_anchor_entry =
@@ -452,7 +477,7 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
   gplayback_word_list *outer_words = &outer->words;
   gplayback_word_list *inner_words = &inner->words;
 
-  unsigned int outer_cursor = outer_words->first;
+  gplayback_word_id outer_cursor = outer_words->first;
 
   while (outer_cursor != 0) {
     gplayback_word_list_entry *outer_entry =
@@ -472,7 +497,7 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
     bool outer_strict =
         words_char_is_whitespace_or_newline(outer_entry->item.ptr[0]);
 
-    unsigned int inner_cursor = inner_words->first;
+    gplayback_word_id inner_cursor = inner_words->first;
 
     while (inner_cursor != 0) {
       gplayback_word_list_entry *inner_entry =
@@ -517,7 +542,7 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
                                .col_idx = inner_entry->item.col_idx + outer_end,
                                .len = inner_entry->item.len - outer_end,
                                .ptr = inner_entry->item.ptr + outer_end};
-        unsigned int word_id = words_create_entry(inner_words, word);
+        gplayback_word_id word_id = words_create_entry(inner_words, word);
         gplayback_word_list_entry *entry =
             words_get_entry_pointer(inner_words, word_id);
         entry->next = next->item.word_id;
@@ -532,7 +557,7 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
                              .ptr = inner_entry->item.ptr + match_idx};
 
       if (match_idx > 0) {
-        unsigned int word_id = words_create_entry(inner_words, word);
+        gplayback_word_id word_id = words_create_entry(inner_words, word);
         gplayback_word_list_entry *entry =
             words_get_entry_pointer(inner_words, word_id);
         entry->next = next->item.word_id;
@@ -590,7 +615,7 @@ gplayback_diff diff_generate(gplayback_slice lhs, gplayback_slice rhs,
   diff_match_words(&diff.lhs, &diff.rhs);
   diff_match_words(&diff.rhs, &diff.lhs);
 
-  unsigned int anchors[WORD_MAX_LINES];
+  gplayback_word_id anchors[WORD_MAX_LINES];
   unsigned int anchors_len = words_find_anchors(&diff.lhs.words, anchors);
 
   diff_process_movewords(&diff.lhs.words, &diff.rhs.words, anchors, anchors_len,

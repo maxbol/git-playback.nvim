@@ -11,8 +11,8 @@ int main() {
   git_libgit2_init();
 
   // fooo
-  gplayback_slice lhs = show_file_at_rev("test.txt", "HEAD~3");
-  gplayback_slice rhs = show_file_at_path("test.txt");
+  gplayback_slice lhs = show_file_at_rev("test2.txt", "HEAD");
+  gplayback_slice rhs = show_file_at_path("test2.txt");
   /*gplayback_slice rhs = show_file_at_rev("test.txt", "HEAD");*/
 
   printf("LHS\n===\n%.*s\n===\n\n", (int)lhs.len, lhs.ptr);

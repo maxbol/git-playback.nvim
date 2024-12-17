@@ -32,12 +32,12 @@ typedef struct {
 } gplayback_generate_diff_opts;
 
 typedef struct {
-  unsigned int lhs_anchor;
+  gplayback_word_id lhs_anchor;
   unsigned int lines_amount;
 } gplayback_diff_moveline;
 
 typedef struct {
-  unsigned int lhs_start;
+  gplayback_word_id lhs_start;
   unsigned int words_amount;
 } gplayback_diff_movewords;
 
@@ -49,9 +49,9 @@ typedef struct {
 } gplayback_diff;
 
 typedef struct {
-  unsigned int from;
-  unsigned int to;
-  unsigned int target;
+  gplayback_word_id from;
+  gplayback_word_id to;
+  gplayback_word_id target;
 } gplayback_diff_word_process_span;
 
 gplayback_text diff_clone_text(gplayback_text text);
