@@ -483,8 +483,8 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
     gplayback_word_list_entry *outer_entry =
         words_get_entry_pointer(outer_words, outer_cursor);
 
-    if (words_is_whitespace(outer_entry->item) ||
-        words_is_linesep(outer_entry->item)) {
+    if (words_is_whitespace(
+            outer_entry->item) /*|| words_is_linesep(outer_entry->item)*/) {
       outer_cursor = outer_entry->next;
       continue;
     }
@@ -503,8 +503,8 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
       gplayback_word_list_entry *inner_entry =
           words_get_entry_pointer(inner_words, inner_cursor);
 
-      if (words_is_whitespace(inner_entry->item) ||
-          words_is_linesep(inner_entry->item)) {
+      if (words_is_whitespace(
+              inner_entry->item) /*|| words_is_linesep(inner_entry->item)*/) {
         inner_cursor = inner_entry->next;
         continue;
       }

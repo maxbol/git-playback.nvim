@@ -304,6 +304,7 @@ patch_handle_splitlines(gplayback_word_list_entry rhs_entry,
 
   gplayback_cursorpos cursor = {0, 0};
   cursor.line = rhs_entry.item.line_idx;
+  cursor.column = rhs_entry.item.col_idx;
 
   dbg_log("Adding GPLAYBACK_OP_SPLIT_ROWS op, cursorpos: %d, %d", cursor.line,
           cursor.column);
@@ -388,10 +389,6 @@ gplayback_vm_operation_entry *patch_handle_insert_words(
     gplayback_word_list_entry rhs_entry, gplayback_word_list *lhs_words,
     gplayback_word_id *lhs_word_cursor, gplayback_vm_operation_entry *entry,
     gplayback_flagset *flags) {
-
-  if (words_is_linesep(rhs_entry.item)) {
-    return entry;
-  }
 
   // Insert word
   gplayback_cursorpos cursor = {0, 0};
@@ -574,9 +571,7 @@ patch_catch_up_rhs(gplayback_diff *diff, gplayback_word_id *lhs_word_cursor,
 
     gplayback_word_id rhs_bol = words_bol(rhs_words, *rhs_word_cursor);
 
-    if (words_nextlt(rhs_words, rhs_bol) == rhs_bol &&
-        words_is_linesep(rhs_entry.item)) {
-
+    if (words_is_linesep(rhs_entry.item)) {
       entry = patch_handle_splitlines(rhs_entry, entry);
 
     } else if (!words_line_has_matches(rhs_words, rhs_bol)) {

@@ -11,7 +11,7 @@ int main() {
   git_libgit2_init();
 
   // fooo
-  gplayback_slice lhs = show_file_at_rev("test2.txt", "HEAD");
+  gplayback_slice lhs = show_file_at_rev("test2.txt", "HEAD~1");
   gplayback_slice rhs = show_file_at_path("test2.txt");
   /*gplayback_slice rhs = show_file_at_rev("test.txt", "HEAD");*/
 
