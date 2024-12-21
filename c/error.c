@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "escapestr.h"
 #include "log.h"
 
 void raw_error_f(const char *message) {

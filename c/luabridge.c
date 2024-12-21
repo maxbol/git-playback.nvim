@@ -7,10 +7,12 @@
 #include "arrays.h"
 #include "assert.h"
 #include "constants.h"
+#include "diff.h"
+#include "git2/repository.h"
 #include "luabridge.h"
 #include "patch.h"
-#include "segments.h"
 #include "show.h"
+#include "slice.h"
 
 void push_cursor(lua_State *L, gplayback_cursorpos cursor) {
   lua_newtable(L);
@@ -70,10 +72,32 @@ void unpack_result(lua_State *L, gplayback_cursorpos *cursor,
 
 int l_show_file_at_rev(lua_State *L) {
   set_err_lua_state(L);
+
+  git_repository *repo = NULL;
   const char *file_path = luaL_checkstring(L, 1);
   const char *rev = luaL_checkstring(L, 2);
-  gplayback_slice txt = show_file_at_rev(file_path, rev);
-  lua_pushlstring(L, txt.ptr, txt.len);
+
+  bool success = git_repository_open(&repo, REPO);
+  assert(success == GIT_SUCCESS, "Could not open repository %s\n",
+         git_error_last()->message);
+
+  if (rev) {
+  }
+
+  gplayback_slice txt = show_file_at_rev(repo, file_path, rev);
+  if (txt.len == 0) {
+  }
+  /*if (txt.len == 0) {*/
+  /*}*/
+
+  /*lua_pushlstring(L, txt.ptr, txt.len);*/
+
+  gplayback_slice txt2 = show_file_at_path(file_path);
+  lua_pushlstring(L, txt2.ptr, txt2.len);
+
+  git_repository_free(repo);
+
+  slice_free_buf(txt2);
   clear_err_lua_state();
   return 1;
 }
@@ -109,10 +133,13 @@ int l_get_diff_keys(lua_State *L) {
   const char *lhs_str = luaL_checkstring(L, 2);
   const char *rhs_str = luaL_checkstring(L, 3);
 
-  gplayback_slice lhs = slice_from_string(lhs_str);
-  gplayback_slice rhs = slice_from_string(rhs_str);
+  gplayback_slice lhs = slice_from_buf(lhs_str);
+  gplayback_slice rhs = slice_from_buf(rhs_str);
 
-  gplayback_diff diff = diff_generate(lhs, rhs);
+  gplayback_diff diff = diff_generate(
+      lhs, rhs,
+      (gplayback_generate_diff_opts){.moveword_min_word_amount = 3,
+                                     .moveline_entropy_treshold = 0.5});
   gplayback_patch patch = patch_generate(&diff);
 
   check_usr_op(L, "insert_word_after", oidx);
@@ -141,6 +168,12 @@ int l_get_diff_keys(lua_State *L) {
 
   check_usr_op(L, "split_rows", oidx);
   int split_rows_ref = lua_ref(L, true);
+
+  check_usr_op(L, "cut_words", oidx);
+  int cut_words_ref = lua_ref(L, true);
+
+  check_usr_op(L, "paste_words", oidx);
+  int paste_words_ref = lua_ref(L, true);
 
   check_usr_op(L, "goto_position", oidx);
   int goto_position_ref = lua_ref(L, true);
@@ -248,6 +281,22 @@ int l_get_diff_keys(lua_State *L) {
       call_usr_op(L, 2);
       break;
     }
+    case GPLAYBACK_OP_CUT_WORDS: {
+      gplayback_vm_op_cut_words *data = entry->item.data;
+      lua_getref(L, cut_words_ref);
+      push_cursor(L, cursor);
+      push_cursor(L, entry->item.cursor);
+      lua_pushinteger(L, data->char_len);
+      call_usr_op(L, 3);
+      break;
+    }
+    case GPLAYBACK_OP_PASTE_WORDS: {
+      lua_getref(L, paste_words_ref);
+      push_cursor(L, cursor);
+      push_cursor(L, entry->item.cursor);
+      call_usr_op(L, 2);
+      break;
+    }
     }
 
     unpack_result(L, &cursor, &keys);
@@ -263,8 +312,8 @@ int l_get_diff_keys(lua_State *L) {
   }
 
   free(keys.items);
-  patch_free(patch);
-  diff_free(diff);
+  patch_free(&patch);
+  diff_free(&diff);
 
   clear_err_lua_state();
   return 1;
@@ -282,5 +331,6 @@ int luaopen_playback(lua_State *L) {
   git_libgit2_init();
 
   luaL_register(L, "playback", playback);
+
   return 1;
 }

@@ -1,9 +1,5 @@
 local ERR_C_ERROR = 0x01
 
-local scriptpath = debug.getinfo(2, "S").source:sub(2):match("(.*/)") or "./lua/git-playback"
-local so_dir = vim.fn.resolve(scriptpath .. "../../../")
-package.cpath = package.cpath .. ";" .. so_dir .. "/?.so"
-
 local import_ok, playback = pcall(require, "playback")
 if not import_ok then
   error("Failed to import playback: " .. playback)
@@ -178,6 +174,20 @@ local operations = {
       column = 0,
     }
     return { keys = keys, cursor = cursor }
+  end,
+  cut_words = function(_, start_pos, char_len)
+    local keys = { "v" }
+    if char_len > 2 then
+      table.insert(keys, (char_len - 1) .. "l")
+    elseif char_len == 2 then
+      table.insert(keys, "l")
+    end
+    table.insert(keys, "x")
+    return { keys = keys, cursor = start_pos }
+  end,
+  paste_words = function(_, start_pos)
+    local keys = { "p" }
+    return { keys = keys, cursor = start_pos }
   end,
 }
 

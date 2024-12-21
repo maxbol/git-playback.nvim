@@ -10,8 +10,15 @@
 int main() {
   git_libgit2_init();
 
+  git_repository *repo = NULL;
+
+  // Open the repository
+  bool success = git_repository_open(&repo, REPO);
+  assert(success == GIT_SUCCESS, "Could not open repository %s\n",
+         git_error_last()->message);
+
   // fooo
-  gplayback_slice lhs = show_file_at_rev("test2.txt", "HEAD~1");
+  gplayback_slice lhs = show_file_at_rev(repo, "test2.txt", "HEAD~2");
   gplayback_slice rhs = show_file_at_path("test2.txt");
   /*gplayback_slice rhs = show_file_at_rev("test.txt", "HEAD");*/
 

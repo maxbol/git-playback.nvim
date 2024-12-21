@@ -7,6 +7,7 @@
 #include "assert.h"
 #include "constants.h"
 #include "diff.h"
+#include "escapestr.h"
 #include "log.h"
 #include "slice.h"
 #include "words.h"
@@ -53,10 +54,11 @@ char *diff_debug(gplayback_diff *diff) {
       unsigned int escaped_len =
           escape_fmt(escaped, WORD_LINE_MAX_LEN * 2, "%.*s", len, buf);
       writestr(ws,
-               "\t\t>> Moving to before RHS line #%d at column #%d: "
+               "\t\t>> Moving to before RHS line #%d at column #%d (anchor "
+               "word id %d): "
                "\e[1;32m%.*s\e[0m\n",
                target_entry.item.line_idx, target_entry.item.col_idx,
-               escaped_len, escaped);
+               target_entry.item.word_id, escaped_len, escaped);
     }
 
     cursor = words_next(rhs_words, cursor);
@@ -216,7 +218,7 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
   for (int i = 0; i <= anchors_len; i++) {
     gplayback_word_id cursor = anchors[i];
     unsigned int word_count = 0;
-    unsigned int matched_count = 0;
+    unsigned int move_count = 0;
 
     gplayback_word_id selection_start = 0;
     unsigned int last_rhs_line = 0;
@@ -251,14 +253,12 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
                   span.to, span.target);
         }
         selection_start = 0;
-        last_rhs_line = 0;
-        last_target = 0;
+        /*last_rhs_line = 0;*/
+        /*last_target = 0;*/
         last_cursor = cursor;
         cursor = words_nextl(lhs_words, cursor);
         continue;
       }
-
-      matched_count++;
 
       gplayback_word_list_entry match =
           words_get_entry(rhs_words, entry.item.match);
@@ -272,7 +272,7 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
 
       if (match_pos >= tail_rhs_pos) {
 
-        dbg_log("Matches word that is on a line below ((%d)) current tail "
+        dbg_log("Matches word that is on a position before ((%d)) current tail "
                 "((%d)) (greater or "
                 "equal line idx) - closing existing move spans, and "
                 "adding no new ones",
@@ -289,18 +289,20 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
                   span.to, span.target);
         }
         selection_start = 0;
-        last_rhs_line = 0;
-        last_target = 0;
+        /*last_rhs_line = 0;*/
+        /*last_target = 0;*/
         tail_rhs_pos = match_pos;
         last_cursor = cursor;
         cursor = words_nextl(lhs_words, cursor);
         continue;
       }
 
-      dbg_log(
-          "Matches word that is on a line above ((%d)) (lower line idx) the "
-          "current tail ((%d)) - creating or adding to existing move span",
-          match_pos, tail_rhs_pos);
+      move_count++;
+
+      dbg_log("Matches word that is on a position before ((%d)) (lower line "
+              "idx) the "
+              "current tail ((%d)) - creating or adding to existing move span",
+              match_pos, tail_rhs_pos);
 
       if (selection_start == 0) {
         selection_start = cursor;
@@ -328,7 +330,7 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
       cursor = words_nextl(lhs_words, cursor);
     }
 
-    const float entropy = 1 - (float)matched_count / word_count;
+    const float entropy = 1 - (float)move_count / word_count;
 
     if (last_target != 0 && is_single_rhs_linematch &&
         entropy <= opts.moveline_entropy_treshold) {
@@ -393,6 +395,42 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
       movewords[span.target] = (gplayback_diff_movewords){
           .lhs_start = span.from, .words_amount = word_count};
     }
+  }
+}
+
+void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
+  gplayback_word_list *outer_words = &outer->words;
+  gplayback_word_list *inner_words = &inner->words;
+
+  gplayback_word_id outer_cursor = outer_words->first;
+  gplayback_word_id last_match = inner_words->first;
+
+  while (outer_cursor != 0) {
+    gplayback_word_list_entry *outer_entry =
+        words_get_entry_pointer(outer_words, outer_cursor);
+
+    if (outer_entry->item.match != 0) {
+      last_match = outer_entry->item.match;
+    } else if (words_is_linesep(outer_entry->item)) {
+      gplayback_word_id inner_cursor = last_match;
+
+      while (inner_cursor != 0) {
+        gplayback_word_list_entry *inner_entry =
+            words_get_entry_pointer(inner_words, inner_cursor);
+
+        if (inner_entry->item.match == 0 &&
+            words_is_linesep(inner_entry->item)) {
+          outer_entry->item.match = inner_cursor;
+          inner_entry->item.match = outer_cursor;
+          last_match = inner_cursor;
+          break;
+        }
+
+        inner_cursor = words_next(inner_words, inner_cursor);
+      }
+    }
+
+    outer_cursor = words_next(outer_words, outer_cursor);
   }
 }
 
@@ -483,8 +521,8 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
     gplayback_word_list_entry *outer_entry =
         words_get_entry_pointer(outer_words, outer_cursor);
 
-    if (words_is_whitespace(
-            outer_entry->item) /*|| words_is_linesep(outer_entry->item)*/) {
+    if (words_is_whitespace(outer_entry->item) ||
+        words_is_linesep(outer_entry->item)) {
       outer_cursor = outer_entry->next;
       continue;
     }
@@ -503,8 +541,8 @@ void diff_match_words(gplayback_text *outer, gplayback_text *inner) {
       gplayback_word_list_entry *inner_entry =
           words_get_entry_pointer(inner_words, inner_cursor);
 
-      if (words_is_whitespace(
-              inner_entry->item) /*|| words_is_linesep(inner_entry->item)*/) {
+      if (words_is_whitespace(inner_entry->item) ||
+          words_is_linesep(inner_entry->item)) {
         inner_cursor = inner_entry->next;
         continue;
       }
@@ -594,26 +632,17 @@ gplayback_diff diff_generate(gplayback_slice lhs, gplayback_slice rhs,
   diff.lhs.words = words_create_list(diff.lhs.slice);
   diff.rhs.words = words_create_list(diff.rhs.slice);
 
-  {
-    char *lhs_wl_debug =
-        words_allocprint_word_list("LHS", &diff.lhs.words, &diff.rhs.words);
-    printf("LHS word list:\n%.*s", (int)strlen(lhs_wl_debug), lhs_wl_debug);
-    free(lhs_wl_debug);
-  }
-  {
-    char *rhs_wl_debug =
-        words_allocprint_word_list("RHS", &diff.rhs.words, &diff.lhs.words);
-    printf("RHS word list:\n%.*s", (int)strlen(rhs_wl_debug), rhs_wl_debug);
-    free(rhs_wl_debug);
-  }
-
   // Primacy is given to identically matched lines
   diff_match_lines(&diff.lhs, &diff.rhs);
   diff_match_lines(&diff.rhs, &diff.lhs);
 
-  // Then we try to match words individually
+  // Then we try to match non-lineseparator words individually
   diff_match_words(&diff.lhs, &diff.rhs);
   diff_match_words(&diff.rhs, &diff.lhs);
+
+  // Finally match line separators
+  diff_match_newlines(&diff.lhs, &diff.rhs);
+  diff_match_newlines(&diff.rhs, &diff.lhs);
 
   gplayback_word_id anchors[WORD_MAX_LINES];
   unsigned int anchors_len = words_find_anchors(&diff.lhs.words, anchors);

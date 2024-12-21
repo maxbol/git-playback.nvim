@@ -31,19 +31,14 @@ gplayback_slice show_file_at_path(const char *file_path) {
   return txt;
 }
 
-gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
-  git_repository *repo = NULL;
+gplayback_slice show_file_at_rev(git_repository *repo, const char *file_path,
+                                 const char *rev) {
   git_object *obj = NULL;
   git_tree *tree = NULL;
   git_blob *blob = NULL;
   git_commit *commit = NULL;
   git_tree_entry *entry = NULL;
   int success = 0;
-
-  // Open the repository
-  success = git_repository_open(&repo, REPO);
-  assert(success == GIT_SUCCESS, "Could not open repository %s\n",
-         git_error_last()->message);
 
   // Resolve the revision
   success = git_revparse_single(&obj, repo, rev);
@@ -94,7 +89,6 @@ gplayback_slice show_file_at_rev(const char *file_path, const char *rev) {
   git_tree_entry_free(entry);
   git_tree_free(tree);
   git_commit_free(commit);
-  git_repository_free(repo);
 
   return txt;
 }
