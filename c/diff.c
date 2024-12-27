@@ -398,7 +398,8 @@ void diff_process_movewords(gplayback_word_list *lhs_words,
   }
 }
 
-void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
+void diff_match_filler(gplayback_text *outer, gplayback_text *inner,
+                       bool (*matches_heuristic)(gplayback_word word)) {
   gplayback_word_list *outer_words = &outer->words;
   gplayback_word_list *inner_words = &inner->words;
 
@@ -411,7 +412,7 @@ void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
 
     if (outer_entry->item.match != 0) {
       last_match = outer_entry->item.match;
-    } else if (words_is_linesep(outer_entry->item)) {
+    } else if (matches_heuristic(outer_entry->item)) {
       gplayback_word_id inner_cursor = last_match;
 
       while (inner_cursor != 0) {
@@ -419,7 +420,8 @@ void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
             words_get_entry_pointer(inner_words, inner_cursor);
 
         if (inner_entry->item.match == 0 &&
-            words_is_linesep(inner_entry->item)) {
+            matches_heuristic(inner_entry->item) &&
+            words_identical(outer_entry->item, inner_entry->item)) {
           outer_entry->item.match = inner_cursor;
           inner_entry->item.match = outer_cursor;
           last_match = inner_cursor;
@@ -432,6 +434,14 @@ void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
 
     outer_cursor = words_next(outer_words, outer_cursor);
   }
+}
+
+void diff_match_newlines(gplayback_text *outer, gplayback_text *inner) {
+  return diff_match_filler(outer, inner, words_is_linesep);
+}
+
+void diff_match_whitespaces(gplayback_text *outer, gplayback_text *inner) {
+  return diff_match_filler(outer, inner, words_is_whitespace);
 }
 
 void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
@@ -455,10 +465,15 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
   gplayback_word_id outer_cursor = outer_words->first;
   while (outer_cursor != 0) {
     assert(outer_cursor < WORD_MAX_LINES, "Too many lines in outer text");
+
     outer_line_anchor[outer_line_offset] = outer_cursor;
     outer_line_size[outer_line_offset] =
         words_print_line(outer_line_char[outer_line_offset], WORD_LINE_MAX_LEN,
                          outer_words, outer_cursor);
+
+    assert(outer_line_size[outer_line_offset] < WORD_LINE_MAX_LEN,
+           "Outer line exceeds max length of %d characters", WORD_LINE_MAX_LEN);
+
     outer_line_offset++;
     outer_cursor =
         words_next(outer_words, words_eol(outer_words, outer_cursor));
@@ -467,10 +482,15 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
   gplayback_word_id inner_cursor = inner_words->first;
   while (inner_cursor != 0) {
     assert(inner_cursor < WORD_MAX_LINES, "Too many lines in inner text");
+
     inner_line_anchor[inner_line_offset] = inner_cursor;
     inner_line_size[inner_line_offset] =
         words_print_line(inner_line_char[inner_line_offset], WORD_LINE_MAX_LEN,
                          inner_words, inner_cursor);
+
+    assert(inner_line_size[inner_line_offset] < WORD_LINE_MAX_LEN,
+           "Inner line exceed max length of %d characters", WORD_LINE_MAX_LEN);
+
     inner_line_offset++;
     inner_cursor =
         words_next(inner_words, words_eol(inner_words, inner_cursor));
@@ -492,18 +512,51 @@ void diff_match_lines(gplayback_text *outer, gplayback_text *inner) {
       gplayback_word_id outer_cursor = outer_line_anchor[i];
       gplayback_word_id inner_cursor = inner_line_anchor[j];
 
+      gplayback_word_id match_pairs[2][WORD_LINE_MAX_LEN] = {0};
+      unsigned int match_pair_offset = 0;
+      bool already_matched = false;
+
       while (outer_cursor != 0 && inner_cursor != 0) {
         gplayback_word_list_entry *outer_anchor_entry =
             words_get_entry_pointer(outer_words, outer_cursor);
         gplayback_word_list_entry *inner_anchor_entry =
             words_get_entry_pointer(inner_words, inner_cursor);
 
-        outer_anchor_entry->item.match = inner_cursor;
-        inner_anchor_entry->item.match = outer_cursor;
+        if (outer_anchor_entry->item.match == 0 ||
+            inner_anchor_entry->item.match == 0) {
+          already_matched = true;
+          break;
+        }
+
+        if (words_is_linesep(outer_anchor_entry->item) ||
+            words_is_linesep(inner_anchor_entry->item)) {
+          outer_cursor = words_nextl(outer_words, outer_cursor);
+          inner_cursor = words_nextl(inner_words, inner_cursor);
+          continue;
+        }
+
+        match_pairs[match_pair_offset++][0] = inner_cursor;
+        match_pairs[match_pair_offset++][1] = outer_cursor;
 
         outer_cursor = words_nextl(outer_words, outer_cursor);
         inner_cursor = words_nextl(inner_words, inner_cursor);
       }
+
+      if (already_matched) {
+        continue;
+      }
+
+      for (int i = 0; i < match_pair_offset; i++) {
+        gplayback_word_list_entry *outer_entry = words_get_entry_pointer(
+            outer_words, match_pairs[match_pair_offset][0]);
+        gplayback_word_list_entry *inner_entry = words_get_entry_pointer(
+            inner_words, match_pairs[match_pair_offset][1]);
+
+        outer_entry->item.match = inner_entry->item.word_id;
+        inner_entry->item.match = outer_entry->item.word_id;
+      }
+
+      break;
     }
   }
 
@@ -640,9 +693,13 @@ gplayback_diff diff_generate(gplayback_slice lhs, gplayback_slice rhs,
   diff_match_words(&diff.lhs, &diff.rhs);
   diff_match_words(&diff.rhs, &diff.lhs);
 
-  // Finally match line separators
+  // Match line separators
   diff_match_newlines(&diff.lhs, &diff.rhs);
   diff_match_newlines(&diff.rhs, &diff.lhs);
+
+  // Finally match trailing newlines etc
+  diff_match_whitespaces(&diff.lhs, &diff.rhs);
+  diff_match_whitespaces(&diff.rhs, &diff.lhs);
 
   gplayback_word_id anchors[WORD_MAX_LINES];
   unsigned int anchors_len = words_find_anchors(&diff.lhs.words, anchors);

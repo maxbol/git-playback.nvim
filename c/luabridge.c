@@ -9,7 +9,9 @@
 #include "constants.h"
 #include "diff.h"
 #include "git2/repository.h"
+#include "log.h"
 #include "luabridge.h"
+#include "luastate.h"
 #include "patch.h"
 #include "show.h"
 #include "slice.h"
@@ -71,7 +73,7 @@ void unpack_result(lua_State *L, gplayback_cursorpos *cursor,
 }
 
 int l_show_file_at_rev(lua_State *L) {
-  set_err_lua_state(L);
+  set_lua_state(L);
 
   git_repository *repo = NULL;
   const char *file_path = luaL_checkstring(L, 1);
@@ -85,38 +87,32 @@ int l_show_file_at_rev(lua_State *L) {
   }
 
   gplayback_slice txt = show_file_at_rev(repo, file_path, rev);
-  if (txt.len == 0) {
-  }
-  /*if (txt.len == 0) {*/
-  /*}*/
 
-  /*lua_pushlstring(L, txt.ptr, txt.len);*/
-
-  gplayback_slice txt2 = show_file_at_path(file_path);
-  lua_pushlstring(L, txt2.ptr, txt2.len);
+  lua_pushlstring(L, txt.ptr, txt.len);
 
   git_repository_free(repo);
 
-  slice_free_buf(txt2);
-  clear_err_lua_state();
+  slice_free_buf(txt);
+  clear_lua_state();
   return 1;
 }
 
 int l_show_file_at_path(lua_State *L) {
-  set_err_lua_state(L);
+  set_lua_state(L);
   const char *file_path = luaL_checkstring(L, 1);
   gplayback_slice txt = show_file_at_path(file_path);
   lua_pushlstring(L, txt.ptr, txt.len);
-  clear_err_lua_state();
+  slice_free_buf(txt);
+  clear_lua_state();
   return 1;
 }
 
 int l_get_diff_keys(lua_State *L) {
-  set_err_lua_state(L);
+  set_lua_state(L);
 
   if (!lua_istable(L, 1)) {
     luaL_error(L, "Expected table as first argument");
-    clear_err_lua_state();
+    clear_lua_state();
     return 0;
   }
 
@@ -126,7 +122,7 @@ int l_get_diff_keys(lua_State *L) {
 
   if (!lua_istable(L, oidx)) {
     luaL_error(L, "Expected table as operations field");
-    clear_err_lua_state();
+    clear_lua_state();
     return 0;
   }
 
@@ -141,6 +137,18 @@ int l_get_diff_keys(lua_State *L) {
       (gplayback_generate_diff_opts){.moveword_min_word_amount = 3,
                                      .moveline_entropy_treshold = 0.5});
   gplayback_patch patch = patch_generate(&diff);
+
+  /*char *diff_debug_out = diff_debug(&diff);*/
+  /*dbg_log_raw("Diff:\n%s", diff_debug_out);*/
+  /*free(diff_debug_out);*/
+  /**/
+  /*char *patch_debug_out = patch_debug(&patch);*/
+  /*dbg_log_raw("Patch:\n %s", patch_debug_out);*/
+  /*free(patch_debug_out);*/
+  /**/
+  /*char *pdiff_debug_out = diff_debug(&patch.diff);*/
+  /*dbg_log_raw("Patch Diff:\n%s", pdiff_debug_out);*/
+  /*free(pdiff_debug_out);*/
 
   check_usr_op(L, "insert_word_after", oidx);
   int ref_insert_word_after = lua_ref(L, true);
@@ -315,7 +323,7 @@ int l_get_diff_keys(lua_State *L) {
   patch_free(&patch);
   diff_free(&diff);
 
-  clear_err_lua_state();
+  clear_lua_state();
   return 1;
 }
 

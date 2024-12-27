@@ -783,3 +783,17 @@ unsigned int words_span_count(gplayback_word_list *word_list,
   }
   return count;
 }
+
+bool words_identical(gplayback_word word_a, gplayback_word word_b) {
+  if (word_a.len != word_b.len) {
+    return false;
+  }
+
+  for (int i = 0; i < word_a.len; i++) {
+    if (word_a.ptr[i] != word_b.ptr[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}

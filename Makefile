@@ -4,7 +4,7 @@ C_SRC					:= ./c
 CC		 				:= clang
 CFLAGS 				:= -g -O0
 CFLAGS_ALL		:= -I$(C_SRC) -I$(UNITY_ROOT)/src -I$(UNITY_ROOT)/extras/fixture/src -Wall -Werror
-# OPTS					:= -DENABLE_DEBUG_LOGGING
+OPTS					:= -DENABLE_DEBUG_LOGGING
 INCLUDES			:= `pkg-config --cflags lua-5.1 libgit2`
 LDFLAGS 			:= `pkg-config --libs libgit2`
 LIBFLAG				:= -bundle -undefined dynamic_lookup -all_load
@@ -19,8 +19,8 @@ INST_LIBDIR 	:= ./lua_modules/lib/lua/5.1
 INST_LUADIR 	:= ./lua_modules/share/lua/5.1
 INST_CONFDIR 	:= ./lua_modules/etc
 
-DEPS := arrays.h assert.h constants.h diff.h error.h escapestr.h flags.h log.h luabridge.h patch.h slice.h show.h words.h writestr.h
-SRC := out/obj/diff.o out/obj/error.o out/obj/escapestr.o out/obj/flags.o out/obj/patch.o out/obj/slice.o out/obj/show.o out/obj/words.o out/obj/writestr.o 
+DEPS := arrays.h assert.h constants.h diff.h error.h escapestr.h flags.h luastate.h log.h luabridge.h patch.h slice.h show.h words.h writestr.h
+SRC := out/obj/diff.o out/obj/error.o out/obj/escapestr.o out/obj/flags.o out/obj/luastate.o out/obj/patch.o out/obj/slice.o out/obj/show.o out/obj/words.o out/obj/writestr.o 
 
 .PHONY: all clean test install
 

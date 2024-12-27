@@ -349,30 +349,31 @@ gplayback_vm_operation_entry *patch_handle_insert_row(
   entry = patch_append_operation_entry(entry, opcode, op_data, cursor);
 
   if (*lhs_word_cursor != 0) {
-    {
-      char line_dump[4096];
-      unsigned int line_len =
-          words_print_line(line_dump, 4096, rhs_words, rhs_bol);
-      dbg_log("@@@ Appending line %d: %.*s", rhs_entry.item.line_idx, line_len,
-              line_dump);
-      char words_dump[8192];
-      unsigned int words_len =
-          words_print_wordlist(words_dump, 8192, lhs_words);
-      dbg_log("Text before:");
-      dbg_log("%.*s", words_len, words_dump);
-    }
+    /*{*/
+    /*  char line_dump[4096];*/
+    /*  unsigned int line_len =*/
+    /*      words_print_line(line_dump, 4096, rhs_words, rhs_bol);*/
+    /*  dbg_log("@@@ Appending line %d: %.*s", rhs_entry.item.line_idx,
+     * line_len,*/
+    /*          line_dump);*/
+    /*  char words_dump[8192];*/
+    /*  unsigned int words_len =*/
+    /*      words_print_wordlist(words_dump, 8192, lhs_words);*/
+    /*  dbg_log("Text before:");*/
+    /*  dbg_log("%.*s", words_len, words_dump);*/
+    /*}*/
     *lhs_word_cursor =
         words_copy_line(rhs_words, lhs_words, rhs_bol, *lhs_word_cursor);
 
     words_recalc_line_numbers(lhs_words);
 
-    {
-      char words_dump[8192];
-      unsigned int words_len =
-          words_print_wordlist(words_dump, 8192, lhs_words);
-      dbg_log("Text after:");
-      dbg_log("%.*s", words_len, words_dump);
-    }
+    /*{*/
+    /*  char words_dump[8192];*/
+    /*  unsigned int words_len =*/
+    /*      words_print_wordlist(words_dump, 8192, lhs_words);*/
+    /*  dbg_log("Text after:");*/
+    /*  dbg_log("%.*s", words_len, words_dump);*/
+    /*}*/
 
     flags_set_line(lhs_words, flags, *lhs_word_cursor,
                    FLAG_VISITED | FLAG_INSERT_PROCESSED, true);

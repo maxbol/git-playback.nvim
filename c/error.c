@@ -12,22 +12,20 @@ void raw_error_f(const char *message) {
 }
 
 void pure_error_f(const char *message) {
-  char escaped[ESCAPE_BUFFER_SIZE] = {0};
-  escape_string(message, escaped, ESCAPE_BUFFER_SIZE);
+  char escaped[OUT_BUFFER_SIZE] = {0};
+  escape_string(message, escaped, OUT_BUFFER_SIZE);
   raw_error_f(escaped);
   exit(1);
 }
 
-#ifdef LUA_EXCEPTIONS
+#ifdef LUA_OUT
 #include <lauxlib.h>
 #include <lua.h>
 
-lua_State *lua_state = NULL;
-
-void set_err_lua_state(lua_State *state) { lua_state = state; }
-void clear_err_lua_state() { lua_state = NULL; }
+#include "luastate.h"
 
 void error_f(const char *message) {
+  lua_State *lua_state = get_lua_state();
   if (lua_state == NULL) {
     pure_error_f(message);
   } else {
@@ -35,7 +33,5 @@ void error_f(const char *message) {
   }
 }
 #else
-void set_err_lua_state(void *state) {}
-void clear_err_lua_state() {}
 void error_f(const char *message) { pure_error_f(message); }
-#endif /* if LUA_EXCEPTIONS */
+#endif /* if LUA_OUT */

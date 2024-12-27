@@ -204,6 +204,8 @@ M.playbackFromCommit = function(lhs_commit, rhs_commit, file)
     ok, lhs = pcall(playback.showFileAtRev, file, lhs_commit)
   end
 
+  print("LHS: " .. lhs)
+
   if not ok then
     error("LHS File retrieval: " .. lhs)
     return ERR_C_ERROR
@@ -214,6 +216,8 @@ M.playbackFromCommit = function(lhs_commit, rhs_commit, file)
   else
     ok, rhs = pcall(playback.showFileAtRev, file, rhs_commit)
   end
+
+  print("RHS: " .. rhs)
 
   if not ok then
     error("RHS File retrieval: " .. rhs)

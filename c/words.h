@@ -161,5 +161,6 @@ unsigned int words_print_word(char *out, unsigned int out_len,
                               gplayback_word_id word_id);
 unsigned int words_span_count(gplayback_word_list *word_list,
                               gplayback_word_id first, gplayback_word_id last);
+bool words_identical(gplayback_word word_a, gplayback_word word_b);
 
 #endif // !WORDS_H
