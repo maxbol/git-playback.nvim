@@ -26,10 +26,3 @@ build = {
     INST_CONFDIR = "$(CONFDIR)",
   },
 }
--- build = {
---   type = "builtin",
---   modules = {
---     ["git-playback"] = "lua/git-playback/init.lua",
---     ["playback"] = { "c/luabridge.c", "c/assert.c", "c/diff.c", "c/patch.c", "c/segments.c", "c/words.c" },
---   },
--- }

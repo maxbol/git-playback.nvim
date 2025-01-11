@@ -12,7 +12,7 @@
 #include "luastate.h"
 #include "writestr.h"
 
-#define _dbg_log(escape, ...)                                                  \
+#define dbg_log_pro(escape, ...)                                               \
   do {                                                                         \
     log_lua_state L = get_lua_state();                                         \
     char out[OUT_BUFFER_SIZE] = {0};                                           \
@@ -34,8 +34,8 @@
     }                                                                          \
   } while (0)
 
-#define dbg_log(...) _dbg_log(true, __VA_ARGS__)
-#define dbg_log_raw(...) _dbg_log(false, __VA_ARGS__)
+#define dbg_log(...) dbg_log_pro(true, __VA_ARGS__)
+#define dbg_log_raw(...) dbg_log_pro(false, __VA_ARGS__)
 
 #else
 #include <stdio.h>

@@ -39,280 +39,6 @@ patch_append_operation_entry(gplayback_vm_operation_entry *entry, int type,
   return next_entry;
 }
 
-// Inserts a copy of word *src before word *dest. Returns a pointer to the newly
-// inserted word entry.
-gplayback_vm_operation_entry *
-patch_append_dl_operation_entry(gplayback_vm_operation_entry *entry,
-                                deleteset *dl) {
-  if (dl->lines_amount == 0) {
-    return entry;
-  }
-
-  gplayback_vm_op_delete_rows *op_data =
-      malloc(sizeof(gplayback_vm_op_delete_rows));
-
-  op_data->no_of_lines = dl->lines_amount;
-
-  gplayback_cursorpos cursor = {dl->anchor_line, 0};
-
-  dbg_log("Adding DELETE_ROWS op: prev - %p; cursor - %d,%d", entry,
-          cursor.line, cursor.column);
-
-  dl->lines_amount = 0;
-  dl->anchor_line = -1;
-
-  return patch_append_operation_entry(entry, GPLAYBACK_OP_DELETE_ROWS, op_data,
-                                      cursor);
-}
-
-/*gplayback_vm_operation_entry **/
-/*patch_append_ml_operation_entry(gplayback_vm_operation_entry *entry,*/
-/*                                gplayback_word_list_entry *nextline_anchor,*/
-/*                                moveset *ml, gplayback_flags *visited) {*/
-/*  if (ml->lines_amount == 0 || ml->move_amount == 0) {*/
-/*    return entry;*/
-/*  }*/
-/**/
-/*  assert(ml->anchor != NULL, "Move lines anchor is NULL");*/
-/**/
-/*  gplayback_vm_op_move_rows *op_data =*/
-/*      malloc(sizeof(gplayback_vm_op_move_rows));*/
-/**/
-/*  op_data->no_of_lines = ml->lines_amount;*/
-/*  // Relative move amount. ml->move_amount signifies the amount of lines
- * moved*/
-/*  // from the top of the moveset if the moveset is 1 line long. The more
- * lines*/
-/*  // are added to the moveset, the fewer steps need to be taken.*/
-/*  // op_data->move_amount reflects this.*/
-/*  op_data->move_amount = ml->move_amount - (ml->lines_amount - 1);*/
-/**/
-/*  gplayback_cursorpos cursor = {ml->anchor->item.line_idx,*/
-/*                                ml->anchor->item.col_idx};*/
-/**/
-/*  gplayback_word_list_entry_refs refs = {0};*/
-/**/
-/*  gplayback_word_list_entry *line_anchor = ml->anchor;*/
-/*  for (int i = 0; i < ml->lines_amount; i++) {*/
-/*    assert(line_anchor != NULL, "Line anchor can't be NULL");*/
-/**/
-/*    int line_idx = line_anchor->item.line_idx;*/
-/**/
-/*    da_append(refs, line_anchor);*/
-/**/
-/*    // Move to next line anchor*/
-/*    do {*/
-/*      if (line_anchor->item.line_idx != line_idx) {*/
-/*        break;*/
-/*      }*/
-/*    } while ((line_anchor = line_anchor->next));*/
-/*  }*/
-/**/
-/*  for (int i = 0; i < refs.count; i++) {*/
-/*    gplayback_word_list_entry *line_anchor = refs.items[i];*/
-/**/
-/*    word_move_words_absolute_until_eol(line_anchor, ml->move_amount);*/
-/*    word_modifys_linenum_until_eol(line_anchor, op_data->move_amount);*/
-/*    words_set_line_flag(visited, line_anchor, false);*/
-/*  }*/
-/**/
-/*  free(refs.items);*/
-/**/
-/*  if (op_data->move_amount > 0) {*/
-/*    assert(nextline_anchor != NULL, "Moveset nextline anchor has no next word
- * "*/
-/*                                    "entry, this should not happen");*/
-/*    words_modify_linenums(nextline_anchor, ml->move_amount,
- * -ml->lines_amount);*/
-/*  } else {*/
-/*    assert(ml->anchor->prev != NULL,*/
-/*           "Moveset anchor has no previous word entry, this should not
- * happen");*/
-/*    word_modify_words_linenum_backwards(ml->anchor->prev, ml->move_amount,*/
-/*                                        ml->lines_amount);*/
-/*  }*/
-/**/
-/*  dbg_log("Adding MOVE_ROWS op - prev: %p, cursorpos: %d,%d, moveamount:
- * %d",*/
-/*          entry, cursor.line, cursor.column, ml->move_amount);*/
-/**/
-/*  ml->lines_amount = 0;*/
-/*  ml->move_amount = 0;*/
-/*  ml->anchor = NULL;*/
-/**/
-/*  return patch_append_operation_entry(entry, GPLAYBACK_OP_MOVE_ROWS,
- * op_data,*/
-/*                                      cursor);*/
-/*}*/
-/**/
-/*int calc_move_amount(gplayback_word_list_entry *rhs_anchor,*/
-/*                     gplayback_word_list_entry *lhs_word_cursor) {*/
-/*  int target_line = 0;*/
-/*  gplayback_word_list_entry *rhs_anchor_rel = rhs_anchor->prev;*/
-/**/
-/*  while (rhs_anchor_rel != NULL) {*/
-/*    if (rhs_anchor_rel->item.match != NULL) {*/
-/*      gplayback_word_list_entry *lhs_anchor_rel =
- * rhs_anchor_rel->item.match;*/
-/**/
-/*      int anchor_distance =*/
-/*          rhs_anchor->item.line_idx - rhs_anchor_rel->item.line_idx;*/
-/**/
-/*      target_line = lhs_anchor_rel->item.line_idx + anchor_distance;*/
-/*      break;*/
-/*    }*/
-/*    rhs_anchor_rel = rhs_anchor_rel->prev;*/
-/*  }*/
-/**/
-/*  if (target_line > lhs_word_cursor->item.line_idx) {*/
-/*    target_line = target_line - 1;*/
-/*  }*/
-/**/
-/*  return target_line - lhs_word_cursor->item.line_idx;*/
-/*}*/
-/**/
-char *patch_debug(gplayback_patch *patch) {
-  gplayback_writestr_state ws = writestr_create(512);
-
-  writestr(ws, "Operations generated:\n");
-
-  gplayback_vm_operation_entry *entry = patch->first;
-  while (entry != NULL) {
-    switch (entry->item.type) {
-    case GPLAYBACK_OP_INSERT_WORD_AFTER: {
-      gplayback_vm_op_insert_word_after *data = entry->item.data;
-      char escaped_buf[512];
-      unsigned int escaped_len =
-          escape_fmt(escaped_buf, 512, " >> Insert word after [src=\"%.*s\"]",
-                     (int)data->src.len, data->src.ptr);
-      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
-      break;
-    }
-    case GPLAYBACK_OP_INSERT_WORD_BEFORE: {
-      gplayback_vm_op_insert_word_before *data = entry->item.data;
-      char escaped_buf[512];
-      unsigned int escaped_len =
-          escape_fmt(escaped_buf, 512, " >> Insert word before [src=\"%.*s\"]",
-                     (int)data->src.len, data->src.ptr);
-      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
-      break;
-    }
-    case GPLAYBACK_OP_INSERT_ROW_AFTER: {
-      gplayback_vm_op_insert_row_after *data = entry->item.data;
-      char escaped_buf[512];
-      unsigned int escaped_len =
-          escape_fmt(escaped_buf, 512, " >> Insert row after [src=\"%.*s\"]",
-                     (int)data->src.len, data->src.ptr);
-      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
-      break;
-    }
-    case GPLAYBACK_OP_INSERT_ROW_BEFORE: {
-      gplayback_vm_op_insert_row_before *data = entry->item.data;
-      char escaped_buf[512];
-      unsigned int escaped_len =
-          escape_fmt(escaped_buf, 512, " >> Insert row before [src=\"%.*s\"]",
-                     (int)data->src.len, data->src.ptr);
-      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
-      break;
-    }
-    case GPLAYBACK_OP_MOVE_ROWS: {
-      gplayback_vm_op_move_rows *data = entry->item.data;
-      writestr(ws, " >> Move rows [no_of_lines=%zu, move_amount=%d]\n",
-               data->no_of_lines, data->move_amount);
-      break;
-    }
-    case GPLAYBACK_OP_DELETE_ROWS: {
-      gplayback_vm_op_delete_rows *data = entry->item.data;
-      writestr(ws, " >> Delete rows [len=%zu]\n", data->no_of_lines);
-      break;
-    }
-    case GPLAYBACK_OP_DELETE_WORDS: {
-      gplayback_vm_op_delete_words *data = entry->item.data;
-      writestr(ws, " >> Delete words [len=%zu]\n", data->char_len);
-      break;
-    }
-    case GPLAYBACK_OP_CONCAT_ROWS: {
-      writestr(ws, " >> Concat rows\n");
-      break;
-    }
-    case GPLAYBACK_OP_SPLIT_ROWS: {
-      writestr(ws, " >> Split rows\n");
-      break;
-    }
-    case GPLAYBACK_OP_CUT_WORDS: {
-      gplayback_vm_op_cut_words *data = entry->item.data;
-      writestr(ws, " >> Cut words from [char_len=%zu]\n", data->char_len);
-      break;
-    }
-    case GPLAYBACK_OP_PASTE_WORDS: {
-      writestr(ws, " >> Paste words before\n");
-      break;
-    }
-    }
-    writestr(ws, " + Cursor: %d:%d\n\n", entry->item.cursor.line,
-             entry->item.cursor.column);
-
-    entry = entry->next;
-  }
-
-  return ws.out;
-}
-
-gplayback_vm_operation_entry *patch_handle_moveline(
-    gplayback_word_list *lhs_words, gplayback_word_id *lhs_word_cursor,
-    gplayback_diff_moveline moveline, gplayback_vm_operation_entry *entry) {
-  gplayback_word_id cursor = moveline.lhs_anchor;
-
-  gplayback_word_list_entry lhs_entry =
-      words_get_entry(lhs_words, *lhs_word_cursor);
-  gplayback_word_list_entry lhs_anchor_entry =
-      words_get_entry(lhs_words, moveline.lhs_anchor);
-
-  unsigned int move_amount =
-      lhs_entry.item.line_idx - lhs_anchor_entry.item.line_idx;
-
-  gplayback_vm_op_move_rows *op_data =
-      malloc(sizeof(gplayback_vm_op_move_rows));
-
-  op_data->move_amount = move_amount;
-  op_data->no_of_lines = moveline.lines_amount;
-
-  gplayback_cursorpos cursorpos = {lhs_anchor_entry.item.line_idx,
-                                   lhs_anchor_entry.item.col_idx};
-
-  dbg_log("Adding GPLAYBACK_OP_MOVE_ROWS op, cursorpos: %d, %d", cursorpos.line,
-          cursorpos.column);
-
-  entry = patch_append_operation_entry(entry, GPLAYBACK_OP_MOVE_ROWS, op_data,
-                                       cursorpos);
-
-  unsigned int i = moveline.lines_amount;
-  while (cursor != 0 && i-- > 0) {
-    words_move_line(lhs_words, cursor, *lhs_word_cursor, false);
-    cursor = words_next(lhs_words, words_eol(lhs_words, cursor));
-  }
-  words_recalc_line_numbers(lhs_words);
-
-  *lhs_word_cursor = moveline.lhs_anchor;
-
-  return entry;
-}
-
-gplayback_vm_operation_entry *
-patch_handle_splitlines(gplayback_word_list_entry rhs_entry,
-                        gplayback_vm_operation_entry *entry) {
-
-  gplayback_cursorpos cursor = {0, 0};
-  cursor.line = rhs_entry.item.line_idx;
-  cursor.column = rhs_entry.item.col_idx;
-
-  dbg_log("Adding GPLAYBACK_OP_SPLIT_ROWS op, cursorpos: %d, %d", cursor.line,
-          cursor.column);
-
-  return patch_append_operation_entry(entry, GPLAYBACK_OP_SPLIT_ROWS, NULL,
-                                      cursor);
-}
-
 gplayback_vm_operation_entry *patch_handle_insert_row(
     gplayback_word_list *rhs_words, gplayback_word_id *rhs_word_cursor,
     gplayback_word_id rhs_bol, gplayback_word_list_entry rhs_entry,
@@ -463,6 +189,45 @@ gplayback_vm_operation_entry *patch_handle_insert_words(
 
   return entry;
 }
+gplayback_vm_operation_entry *patch_handle_moveline(
+    gplayback_word_list *lhs_words, gplayback_word_id *lhs_word_cursor,
+    gplayback_diff_moveline moveline, gplayback_vm_operation_entry *entry) {
+  gplayback_word_id cursor = moveline.lhs_anchor;
+
+  gplayback_word_list_entry lhs_entry =
+      words_get_entry(lhs_words, *lhs_word_cursor);
+  gplayback_word_list_entry lhs_anchor_entry =
+      words_get_entry(lhs_words, moveline.lhs_anchor);
+
+  unsigned int move_amount =
+      lhs_entry.item.line_idx - lhs_anchor_entry.item.line_idx;
+
+  gplayback_vm_op_move_rows *op_data =
+      malloc(sizeof(gplayback_vm_op_move_rows));
+
+  op_data->move_amount = move_amount;
+  op_data->no_of_lines = moveline.lines_amount;
+
+  gplayback_cursorpos cursorpos = {lhs_anchor_entry.item.line_idx,
+                                   lhs_anchor_entry.item.col_idx};
+
+  dbg_log("Adding GPLAYBACK_OP_MOVE_ROWS op, cursorpos: %d, %d", cursorpos.line,
+          cursorpos.column);
+
+  entry = patch_append_operation_entry(entry, GPLAYBACK_OP_MOVE_ROWS, op_data,
+                                       cursorpos);
+
+  unsigned int i = moveline.lines_amount;
+  while (cursor != 0 && i-- > 0) {
+    words_move_line(lhs_words, cursor, *lhs_word_cursor, false);
+    cursor = words_next(lhs_words, words_eol(lhs_words, cursor));
+  }
+  words_recalc_line_numbers(lhs_words);
+
+  *lhs_word_cursor = moveline.lhs_anchor;
+
+  return entry;
+}
 
 gplayback_vm_operation_entry *patch_handle_movewords(
     gplayback_word_list *lhs_words, gplayback_word_id *lhs_word_cursor,
@@ -522,6 +287,45 @@ gplayback_vm_operation_entry *patch_handle_movewords(
   *lhs_word_cursor = movewords.lhs_start;
 
   return entry;
+}
+
+gplayback_vm_operation_entry *
+patch_handle_splitlines(gplayback_word_list_entry rhs_entry,
+                        gplayback_vm_operation_entry *entry) {
+
+  gplayback_cursorpos cursor = {0, 0};
+  cursor.line = rhs_entry.item.line_idx;
+  cursor.column = rhs_entry.item.col_idx;
+
+  dbg_log("Adding GPLAYBACK_OP_SPLIT_ROWS op, cursorpos: %d, %d", cursor.line,
+          cursor.column);
+
+  return patch_append_operation_entry(entry, GPLAYBACK_OP_SPLIT_ROWS, NULL,
+                                      cursor);
+}
+
+gplayback_vm_operation_entry *
+patch_append_dl_operation_entry(gplayback_vm_operation_entry *entry,
+                                deleteset *dl) {
+  if (dl->lines_amount == 0) {
+    return entry;
+  }
+
+  gplayback_vm_op_delete_rows *op_data =
+      malloc(sizeof(gplayback_vm_op_delete_rows));
+
+  op_data->no_of_lines = dl->lines_amount;
+
+  gplayback_cursorpos cursor = {dl->anchor_line, 0};
+
+  dbg_log("Adding DELETE_ROWS op: prev - %p; cursor - %d,%d", entry,
+          cursor.line, cursor.column);
+
+  dl->lines_amount = 0;
+  dl->anchor_line = -1;
+
+  return patch_append_operation_entry(entry, GPLAYBACK_OP_DELETE_ROWS, op_data,
+                                      cursor);
 }
 
 gplayback_vm_operation_entry *
@@ -592,6 +396,99 @@ patch_catch_up_rhs(gplayback_diff *diff, gplayback_word_id *lhs_word_cursor,
   return entry;
 }
 
+/**/
+char *patch_debug(gplayback_patch *patch) {
+  gplayback_writestr_state ws = writestr_create(512);
+
+  writestr(ws, "Operations generated:\n");
+
+  gplayback_vm_operation_entry *entry = patch->first;
+  while (entry != NULL) {
+    switch (entry->item.type) {
+    case GPLAYBACK_OP_INSERT_WORD_AFTER: {
+      gplayback_vm_op_insert_word_after *data = entry->item.data;
+      char escaped_buf[512];
+      unsigned int escaped_len =
+          escape_fmt(escaped_buf, 512, " >> Insert word after [src=\"%.*s\"]",
+                     (int)data->src.len, data->src.ptr);
+      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
+      break;
+    }
+    case GPLAYBACK_OP_INSERT_WORD_BEFORE: {
+      gplayback_vm_op_insert_word_before *data = entry->item.data;
+      char escaped_buf[512];
+      unsigned int escaped_len =
+          escape_fmt(escaped_buf, 512, " >> Insert word before [src=\"%.*s\"]",
+                     (int)data->src.len, data->src.ptr);
+      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
+      break;
+    }
+    case GPLAYBACK_OP_INSERT_ROW_AFTER: {
+      gplayback_vm_op_insert_row_after *data = entry->item.data;
+      char escaped_buf[512];
+      unsigned int escaped_len =
+          escape_fmt(escaped_buf, 512, " >> Insert row after [src=\"%.*s\"]",
+                     (int)data->src.len, data->src.ptr);
+      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
+      break;
+    }
+    case GPLAYBACK_OP_INSERT_ROW_BEFORE: {
+      gplayback_vm_op_insert_row_before *data = entry->item.data;
+      char escaped_buf[512];
+      unsigned int escaped_len =
+          escape_fmt(escaped_buf, 512, " >> Insert row before [src=\"%.*s\"]",
+                     (int)data->src.len, data->src.ptr);
+      writestr(ws, "%.*s\n", escaped_len, escaped_buf);
+      break;
+    }
+    case GPLAYBACK_OP_MOVE_ROWS: {
+      gplayback_vm_op_move_rows *data = entry->item.data;
+      writestr(ws, " >> Move rows [no_of_lines=%zu, move_amount=%d]\n",
+               data->no_of_lines, data->move_amount);
+      break;
+    }
+    case GPLAYBACK_OP_DELETE_ROWS: {
+      gplayback_vm_op_delete_rows *data = entry->item.data;
+      writestr(ws, " >> Delete rows [len=%zu]\n", data->no_of_lines);
+      break;
+    }
+    case GPLAYBACK_OP_DELETE_WORDS: {
+      gplayback_vm_op_delete_words *data = entry->item.data;
+      writestr(ws, " >> Delete words [len=%zu]\n", data->char_len);
+      break;
+    }
+    case GPLAYBACK_OP_CONCAT_ROWS: {
+      writestr(ws, " >> Concat rows\n");
+      break;
+    }
+    case GPLAYBACK_OP_SPLIT_ROWS: {
+      writestr(ws, " >> Split rows\n");
+      break;
+    }
+    case GPLAYBACK_OP_CUT_WORDS: {
+      gplayback_vm_op_cut_words *data = entry->item.data;
+      writestr(ws, " >> Cut words from [char_len=%zu]\n", data->char_len);
+      break;
+    }
+    case GPLAYBACK_OP_PASTE_WORDS: {
+      writestr(ws, " >> Paste words before\n");
+      break;
+    }
+    }
+    writestr(ws, " + Cursor: %d:%d\n\n", entry->item.cursor.line,
+             entry->item.cursor.column);
+
+    entry = entry->next;
+  }
+
+  return ws.out;
+}
+
+void patch_free(gplayback_patch *patch) {
+  patch_free_operation_entries(patch->first);
+  diff_free(&patch->diff);
+}
+
 void patch_free_operation_entries(gplayback_vm_operation_entry *entry) {
   if (entry == NULL) {
     return;
@@ -603,11 +500,6 @@ void patch_free_operation_entries(gplayback_vm_operation_entry *entry) {
   free(entry);
 
   patch_free_operation_entries(next);
-}
-
-void patch_free(gplayback_patch *patch) {
-  patch_free_operation_entries(patch->first);
-  diff_free(&patch->diff);
 }
 
 gplayback_patch patch_generate(gplayback_diff *diff) {
@@ -650,20 +542,10 @@ gplayback_patch patch_generate(gplayback_diff *diff) {
 
     if (is_newline) {
       if (line_is_dirty) {
-        // This line should not be deleted, so we can commit all lines that are
-        // marked for deletion into the DELETE ROWS operation
         if (dl.lines_amount > 0) {
           entry = patch_append_dl_operation_entry(entry, &dl);
         }
       } else {
-        // This line should be deleted, and not moved, so we need to commit all
-        // lines that are buffered for moving into the MOVE ROWS operation
-        // before appending this line to the dl buffer
-        /*if (ml.lines_amount > 0) {*/
-        /*  entry = append_ml_operation_entry(entry, lhs_word_cursor, &ml,*/
-        /*                                    &lhs_inserts_processed);*/
-        /*}*/
-
         if (dl.anchor_line == -1) {
           dl.anchor_line = lhs_entry.item.line_idx;
           dl.lines_amount++;

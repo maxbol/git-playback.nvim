@@ -1,4 +1,3 @@
-#include <assert.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -6,15 +5,15 @@
 #include "escapestr.h"
 #include "log.h"
 
-void raw_error_f(const char *message) {
-  fprintf(stderr, "%s\n", message);
-  exit(1);
-}
-
 void pure_error_f(const char *message) {
   char escaped[OUT_BUFFER_SIZE] = {0};
   escape_string(message, escaped, OUT_BUFFER_SIZE);
   raw_error_f(escaped);
+  exit(1);
+}
+
+void raw_error_f(const char *message) {
+  fprintf(stderr, "%s\n", message);
   exit(1);
 }
 

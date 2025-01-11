@@ -75,13 +75,13 @@ local operations = {
         end
       end
       if pos.column ~= 0 then
-        table.insert(keys, "^")
+        table.insert(keys, "0")
         pos.column = 0
       end
     end
     if pos.column ~= next_pos.column then
       if next_pos.column == 0 then
-        table.insert(keys, "^")
+        table.insert(keys, "0")
       else
         local coldiff = next_pos.column - pos.column
         if coldiff > 1 then

@@ -16,6 +16,12 @@
 #include "show.h"
 #include "slice.h"
 
+void lua_print(lua_State *L, const char *str) {
+  lua_getglobal(L, "print");
+  lua_pushstring(L, str);
+  lua_call(L, 1, 0);
+}
+
 void push_cursor(lua_State *L, gplayback_cursorpos cursor) {
   lua_newtable(L);
   lua_pushstring(L, "line");
@@ -72,41 +78,6 @@ void unpack_result(lua_State *L, gplayback_cursorpos *cursor,
   cursor->column = lua_tointeger(L, -1);
 }
 
-int l_show_file_at_rev(lua_State *L) {
-  set_lua_state(L);
-
-  git_repository *repo = NULL;
-  const char *file_path = luaL_checkstring(L, 1);
-  const char *rev = luaL_checkstring(L, 2);
-
-  bool success = git_repository_open(&repo, REPO);
-  assert(success == GIT_SUCCESS, "Could not open repository %s\n",
-         git_error_last()->message);
-
-  if (rev) {
-  }
-
-  gplayback_slice txt = show_file_at_rev(repo, file_path, rev);
-
-  lua_pushlstring(L, txt.ptr, txt.len);
-
-  git_repository_free(repo);
-
-  slice_free_buf(txt);
-  clear_lua_state();
-  return 1;
-}
-
-int l_show_file_at_path(lua_State *L) {
-  set_lua_state(L);
-  const char *file_path = luaL_checkstring(L, 1);
-  gplayback_slice txt = show_file_at_path(file_path);
-  lua_pushlstring(L, txt.ptr, txt.len);
-  slice_free_buf(txt);
-  clear_lua_state();
-  return 1;
-}
-
 int l_get_diff_keys(lua_State *L) {
   set_lua_state(L);
 
@@ -138,14 +109,14 @@ int l_get_diff_keys(lua_State *L) {
                                      .moveline_entropy_treshold = 0.5});
   gplayback_patch patch = patch_generate(&diff);
 
-  /*char *diff_debug_out = diff_debug(&diff);*/
-  /*dbg_log_raw("Diff:\n%s", diff_debug_out);*/
-  /*free(diff_debug_out);*/
-  /**/
-  /*char *patch_debug_out = patch_debug(&patch);*/
-  /*dbg_log_raw("Patch:\n %s", patch_debug_out);*/
-  /*free(patch_debug_out);*/
-  /**/
+  char *diff_debug_out = diff_debug(&diff);
+  lua_print(L, diff_debug_out);
+  free(diff_debug_out);
+
+  char *patch_debug_out = patch_debug(&patch);
+  lua_print(L, patch_debug_out);
+  free(patch_debug_out);
+
   /*char *pdiff_debug_out = diff_debug(&patch.diff);*/
   /*dbg_log_raw("Patch Diff:\n%s", pdiff_debug_out);*/
   /*free(pdiff_debug_out);*/
@@ -323,6 +294,38 @@ int l_get_diff_keys(lua_State *L) {
   patch_free(&patch);
   diff_free(&diff);
 
+  clear_lua_state();
+  return 1;
+}
+
+int l_show_file_at_path(lua_State *L) {
+  set_lua_state(L);
+  const char *file_path = luaL_checkstring(L, 1);
+  gplayback_slice txt = show_file_at_path(file_path);
+  lua_pushlstring(L, txt.ptr, txt.len);
+  slice_free_buf(txt);
+  clear_lua_state();
+  return 1;
+}
+
+int l_show_file_at_rev(lua_State *L) {
+  set_lua_state(L);
+
+  git_repository *repo = NULL;
+  const char *file_path = luaL_checkstring(L, 1);
+  const char *rev = luaL_checkstring(L, 2);
+
+  bool success = git_repository_open(&repo, REPO);
+  assert(success == GIT_SUCCESS, "Could not open repository %s\n",
+         git_error_last()->message);
+
+  gplayback_slice txt = show_file_at_rev(repo, file_path, rev);
+
+  lua_pushlstring(L, txt.ptr, txt.len);
+
+  git_repository_free(repo);
+
+  slice_free_buf(txt);
   clear_lua_state();
   return 1;
 }
