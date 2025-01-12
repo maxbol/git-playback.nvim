@@ -259,12 +259,25 @@ void test_patch_realworld2(void) {
 
   TEST_ASSERT_EQUAL(GPLAYBACK_OP_DELETE_ROWS, entry->item.type);
 
-  TEST_ASSERT_EQUAL(30, entry->item.cursor.line);
+  TEST_ASSERT_EQUAL(28, entry->item.cursor.line);
   TEST_ASSERT_EQUAL(0, entry->item.cursor.column);
 
   gplayback_vm_op_delete_rows *delete_rows = entry->item.data;
 
-  TEST_ASSERT_EQUAL(9, delete_rows->no_of_lines);
+  TEST_ASSERT_EQUAL(7, delete_rows->no_of_lines);
+
+  TEST_ASSERT(entry->next != NULL);
+
+  entry = entry->next;
+
+  TEST_ASSERT_EQUAL(GPLAYBACK_OP_DELETE_ROWS, entry->item.type);
+
+  TEST_ASSERT_EQUAL(29, entry->item.cursor.line);
+  TEST_ASSERT_EQUAL(0, entry->item.cursor.column);
+
+  delete_rows = entry->item.data;
+
+  TEST_ASSERT_EQUAL(1, delete_rows->no_of_lines);
 
   TEST_ASSERT(entry->next == NULL);
 }

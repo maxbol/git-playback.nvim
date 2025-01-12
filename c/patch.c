@@ -318,8 +318,8 @@ patch_append_dl_operation_entry(gplayback_vm_operation_entry *entry,
 
   gplayback_cursorpos cursor = {dl->anchor_line, 0};
 
-  dbg_log("Adding DELETE_ROWS op: prev - %p; cursor - %d,%d", entry,
-          cursor.line, cursor.column);
+  dbg_log("Adding DELETE_ROWS op: prev - %p; cursor - %d,%d, lines_amount: %d",
+          entry, cursor.line, cursor.column, dl->lines_amount);
 
   dl->lines_amount = 0;
   dl->anchor_line = -1;
@@ -548,8 +548,8 @@ gplayback_patch patch_generate(gplayback_diff *diff) {
       } else {
         if (dl.anchor_line == -1) {
           dl.anchor_line = lhs_entry.item.line_idx;
-          dl.lines_amount++;
         }
+        dl.lines_amount++;
 
         lhs_word_cursor =
             words_delete_words_until_eol(lhs_words, lhs_word_cursor);
